@@ -212,7 +212,8 @@ struct bms_notify {
  * @max_voltage_mv:		the max volts the batt should be charged up to
  * @min_voltage_mv:		the min battery voltage before turning the FETon
  * @uvd_voltage_mv:		(PM8917 only) the falling UVD threshold voltage
- * @alarm_voltage_mv:		the battery alarm voltage
+ * @alarm_low_mv:		the battery alarm voltage low
+ * @alarm_high_mv:		the battery alarm voltage high
  * @cool_temp_dc:		the cool temp threshold in deciCelcius
  * @warm_temp_dc:		the warm temp threshold in deciCelcius
  * @resume_voltage_delta:	the voltage delta from vdd max at which the
@@ -233,7 +234,8 @@ struct pm8921_chg_chip {
 	unsigned int			max_voltage_mv;
 	unsigned int			min_voltage_mv;
 	unsigned int			uvd_voltage_mv;
-	unsigned int			alarm_voltage_mv;
+	unsigned int			alarm_low_mv;
+	unsigned int			alarm_high_mv;
 	int				cool_temp_dc;
 	int				warm_temp_dc;
 	unsigned int			temp_check_period;
@@ -2011,13 +2013,11 @@ static int pm8921_charger_configure_batt_alarm(struct pm8921_chg_chip *chip)
 	 */
 	rc = pm8xxx_batt_alarm_threshold_set(
 			PM8XXX_BATT_ALARM_LOWER_COMPARATOR,
-					chip->alarm_voltage_mv);
-	/* We only handle the lower limit of the battery alarm, thus
-	 * set a high sane maximum.
-	 */
+					chip->alarm_low_mv);
 	if (!rc)
 		rc = pm8xxx_batt_alarm_threshold_set(
-			PM8XXX_BATT_ALARM_UPPER_COMPARATOR, 5000);
+			PM8XXX_BATT_ALARM_UPPER_COMPARATOR,
+					chip->alarm_high_mv);
 	if (rc) {
 		pr_err("unable to set batt alarm threshold rc=%d\n", rc);
 		return rc;
@@ -2184,7 +2184,7 @@ static void turn_off_ovp_fet(struct pm8921_chg_chip *chip, u16 ovptestreg)
 static int pm8921_battery_gauge_alarm_notify(struct notifier_block *nb,
 		unsigned long status, void *unused)
 {
-	int rc, fsm_state;
+	int rc;
 
 	pr_info("status: %lu\n", status);
 
@@ -2201,18 +2201,32 @@ static int pm8921_battery_gauge_alarm_notify(struct notifier_block *nb,
 			return -EINVAL;
 		}
 
-		fsm_state = pm_chg_get_fsm_state(the_chip);
 		the_chip->disable_hw_clock_switching = 1;
 
 		rc = pm8xxx_batt_alarm_disable(
-				PM8XXX_BATT_ALARM_UPPER_COMPARATOR);
-		if (!rc)
-			rc = pm8xxx_batt_alarm_disable(
 				PM8XXX_BATT_ALARM_LOWER_COMPARATOR);
+		if (!rc)
+			rc = pm8xxx_batt_alarm_enable(
+				PM8XXX_BATT_ALARM_UPPER_COMPARATOR);
 		if (rc)
 			pr_err("unable to set alarm state rc=%d\n", rc);
 		break;
 	case 2:
+		if (!the_chip) {
+			pr_err("not initialized\n");
+			return -EINVAL;
+		}
+
+		the_chip->disable_hw_clock_switching = 0;
+
+		rc = pm8xxx_batt_alarm_disable(
+				PM8XXX_BATT_ALARM_UPPER_COMPARATOR);
+		if (!rc)
+			rc = pm8xxx_batt_alarm_enable(
+				PM8XXX_BATT_ALARM_LOWER_COMPARATOR);
+		if (rc)
+			pr_err("unable to set alarm state rc=%d\n", rc);
+
 		pr_err("trip of high threshold\n");
 		break;
 	default:
@@ -4161,7 +4175,8 @@ static int __devinit pm8921_charger_probe(struct platform_device *pdev)
 	chip->ttrkl_time = pdata->ttrkl_time;
 	chip->update_time = pdata->update_time;
 	chip->max_voltage_mv = pdata->max_voltage;
-	chip->alarm_voltage_mv = pdata->alarm_voltage;
+	chip->alarm_low_mv = pdata->alarm_low_mv;
+	chip->alarm_high_mv = pdata->alarm_high_mv;
 	chip->min_voltage_mv = pdata->min_voltage;
 	chip->uvd_voltage_mv = pdata->uvd_thresh_voltage;
 	chip->resume_voltage_delta = pdata->resume_voltage_delta;
