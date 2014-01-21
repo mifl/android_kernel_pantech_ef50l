@@ -11,7 +11,7 @@
 # set toolchain
 ##############################################################################
 export ARCH=arm
-export CROSS_COMPILE=$PWD/../../../prebuilt/linux-x86/toolchain/arm-eabi-4.4.3/bin/arm-eabi-
+export CROSS_COMPILE=$PWD/../../../prebuilts/gcc/linux-x86/arm/arm-eabi-4.6/bin/arm-eabi-
 export LINUX_BIN_PATH=$PWD/obj
 rm -rf $LINUX_BIN_PATH
 CMD_V_LOG_FILE=$PWD/KERNEL_build.log

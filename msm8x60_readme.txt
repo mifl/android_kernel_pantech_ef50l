@@ -2,7 +2,7 @@
 # How to Build Generic msm8x60 kernel
 #
 
-1. Get Toolchain (arm-eabi-4.4.3) and install:
+1. Get Toolchain (arm-eabi-4.6) and install:
 
        http://android.git.kernel.org/?p=platform/prebuilt.git
 
