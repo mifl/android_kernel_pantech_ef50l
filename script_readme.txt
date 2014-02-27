@@ -4,7 +4,7 @@
 
 1. Get Toolchain (arm-eabi-4.6) and install:
 
-       http://android.git.kernel.org/?p=platform/prebuilt.git
+       https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-eabi-4.6/
 
 2. Build the Kernel
 
