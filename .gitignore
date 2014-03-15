@@ -84,3 +84,11 @@ GTAGS
 *.orig
 *~
 \#*#
+
+
+
+#
+# Kernel script generated files
+#
+obj
+KERNEL_build.log
