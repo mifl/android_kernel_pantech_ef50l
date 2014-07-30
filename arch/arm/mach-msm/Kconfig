@@ -923,7 +923,9 @@ config MACH_MSM_DUMMY
 
 endmenu
 
+if !CUST_PANTECH_H
 source "arch/arm/mach-msm/lge/Kconfig"
+endif
 
 config MSM_STACKED_MEMORY
 	bool "Stacked Memory"
