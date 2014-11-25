@@ -1,0 +1,505 @@
+if CUST_PANTECH_H
+
+#
+# CUST PANTECH CONFIG SECTION
+#
+
+source "arch/arm/mach-msm/cust/lcd/Kconfig" #pantech_lcd
+
+source "arch/arm/mach-msm/cust/lgu/Kconfig" #pantech_lgu
+
+source "arch/arm/mach-msm/cust/SIO/Kconfig" #pantech_usb
+
+menu "CUST PANTECH CONFIG SECTION"
+
+config PANTECH
+	bool "PANTECH Common Configuration"
+	default y
+	select PANTECH_ERR_CRASH_LOGGING
+	select PANTECH_FS_AUTO_REPAIR
+	select PANTECH_PMIC_PWRKEY
+	# JINHO.PARK.LS4.2013.01.10
+	select PANTECH_SOC_HW_REVISION_NUMBER
+	help
+	  Support PANTECH
+
+#config PANTECH_VERIZON
+#	depends on
+#	bool
+#	default y
+#	help
+#	  Pantech Verizon Configuration
+
+#config PANTECH_ATNT
+#	depends on
+#	bool
+#	default y
+#	help
+#	  Pantech ATNT Configuration
+
+#config PANTECH_JAPAN
+#	depends on
+#	bool
+#	default y
+#	help
+#	  Pantech Japan Configuration
+
+config PANTECH_DOMESTIC
+	depends on (MACH_APQ8064_EF48S || MACH_APQ8064_EF49K || MACH_APQ8064_50L || MACH_APQ8064_EF51S || MACH_APQ8064_EF51K || MACH_APQ8064_51L)
+	bool
+	default y
+	help
+	  Pantech Domestic Configuration
+
+config SKY
+	depends on PANTECH_DOMESTIC
+	bool "SKY Common Configuration"
+	default y
+	help
+	  Support SKY
+
+config SKY_EF48S_BOARD
+	depends on MACH_APQ8064_EF48S
+	bool "SKY_EF48S_BOARD Configuration"
+	default y
+	select SKY_SND_EXTERNAL_AMP
+	select SKY_SND_MICB2_2700
+	select SKY_SND_MBHC_GPIO
+	select SKY_SND_AUTOANSWER
+	select KSKY_RAWDATA
+	select SKY_SND_MODIFIER
+	select PANTECH_SND_QSOUND
+	select NLS_UTF8
+	select PANTECH_MORE_DEBUGGING_INFO_ON_KERNEL
+#	select SKY_SND_SPK_DEBUG_LOG
+	help
+	  Support EF48S Board
+
+config SKY_EF49K_BOARD
+	depends on MACH_APQ8064_EF49K
+	bool "SKY_EF49K_BOARD Configuration"
+	default y
+	select SKY_SND_EXTERNAL_AMP
+	select SKY_SND_MICB2_2700
+	select SKY_SND_MBHC_GPIO
+	select SKY_SND_AUTOANSWER
+	select KSKY_RAWDATA
+	select SKY_SND_MODIFIER
+	select PANTECH_SND_QSOUND
+	select NLS_UTF8
+	select PANTECH_MORE_DEBUGGING_INFO_ON_KERNEL
+#	select SKY_SND_SPK_DEBUG_LOG
+	help
+	  Support EF49K Board
+
+config SKY_EF50L_BOARD
+	depends on MACH_APQ8064_EF50L
+	bool "SKY_EF50L_BOARD Configuration"
+	default y
+	select SKY_SND_EXTERNAL_AMP
+	select SKY_SND_MICB2_2700
+	select SKY_SND_MBHC_GPIO
+	select SKY_SND_AUTOANSWER
+	select KSKY_RAWDATA
+	select SKY_SND_MODIFIER
+	select PANTECH_SND_QSOUND
+	select NLS_UTF8
+	select PANTECH_MORE_DEBUGGING_INFO_ON_KERNEL
+#	select SKY_SND_SPK_DEBUG_LOG
+	help
+	  Support EF50L Board
+
+config SKY_EF51S_BOARD
+	depends on MACH_APQ8064_EF51S
+	bool "SKY_EF51S_BOARD Configuration"
+	default y
+	select SKY_SND_EXTERNAL_AMP
+	select SKY_SND_MICB2_2700
+	select SKY_SND_MBHC_GPIO
+	select SKY_SND_AUTOANSWER
+	select KSKY_RAWDATA
+	select SKY_SND_MODIFIER
+	select NLS_UTF8
+	select PANTECH_SND_QSOUND
+	select SKY_SND_DOCKING_CRADLE
+	select SKY_SND_HEADSET_BUTTON_ADC
+	select PANTECH_MORE_DEBUGGING_INFO_ON_KERNEL
+#	select SKY_SND_SPK_DEBUG_LOG
+	help
+	  Support EF51S Board
+
+config SKY_EF51K_BOARD
+	depends on MACH_APQ8064_EF51K
+	bool "SKY_EF51K_BOARD Configuration"
+	default y
+	select SKY_SND_EXTERNAL_AMP
+	select SKY_SND_MICB2_2700
+	select SKY_SND_MBHC_GPIO
+	select SKY_SND_AUTOANSWER
+	select KSKY_RAWDATA
+	select SKY_SND_MODIFIER
+	select NLS_UTF8
+	select PANTECH_SND_QSOUND
+	select SKY_SND_DOCKING_CRADLE
+	select SKY_SND_HEADSET_BUTTON_ADC
+	select PANTECH_MORE_DEBUGGING_INFO_ON_KERNEL
+#	select SKY_SND_SPK_DEBUG_LOG
+	help
+	  Support EF51K Board
+
+config SKY_EF51L_BOARD
+	depends on MACH_APQ8064_EF51L
+	bool "SKY_EF51L_BOARD Configuration"
+	default y
+	select SKY_SND_EXTERNAL_AMP
+	select SKY_SND_MICB2_2700
+	select SKY_SND_MBHC_GPIO
+	select SKY_SND_AUTOANSWER
+	select KSKY_RAWDATA
+	select SKY_SND_MODIFIER
+	select NLS_UTF8
+	select PANTECH_SND_QSOUND
+	select SKY_SND_DOCKING_CRADLE
+	select SKY_SND_HEADSET_BUTTON_ADC
+	select PANTECH_MORE_DEBUGGING_INFO_ON_KERNEL
+#	select SKY_SND_SPK_DEBUG_LOG
+	help
+	  Support EF51L Board
+
+config SKY_EF52S_BOARD
+	depends on MACH_APQ8064_EF52S
+	bool "SKY_EF52S_BOARD Configuration"
+	default y
+	select SKY_SND_EXTERNAL_AMP
+	select SKY_SND_MICB2_2700
+	select SKY_SND_MBHC_GPIO
+	select SKY_SND_AUTOANSWER
+	select KSKY_RAWDATA
+	select SKY_SND_MODIFIER
+	select NLS_UTF8
+	select PANTECH_SND_QSOUND
+	select SKY_SND_DOCKING_CRADLE
+	select SKY_SND_HEADSET_BUTTON_ADC
+	select PANTECH_MORE_DEBUGGING_INFO_ON_KERNEL
+#	select SKY_SND_SPK_DEBUG_LOG
+	help
+	  Support EF52S Board
+
+config SKY_EF52K_BOARD
+	depends on MACH_APQ8064_EF52K
+	bool "SKY_EF52K_BOARD Configuration"
+	default y
+	select SKY_SND_EXTERNAL_AMP
+	select SKY_SND_MICB2_2700
+	select SKY_SND_MBHC_GPIO
+	select SKY_SND_AUTOANSWER
+	select KSKY_RAWDATA
+	select SKY_SND_MODIFIER
+	select NLS_UTF8
+	select PANTECH_SND_QSOUND
+	select SKY_SND_DOCKING_CRADLE
+	select SKY_SND_HEADSET_BUTTON_ADC
+	select PANTECH_MORE_DEBUGGING_INFO_ON_KERNEL
+#	select SKY_SND_SPK_DEBUG_LOG
+	help
+	  Support EF52K Board
+
+config SKY_EF52L_BOARD
+	depends on MACH_APQ8064_EF52L
+	bool "SKY_EF52L_BOARD Configuration"
+	default y
+	select SKY_SND_EXTERNAL_AMP
+	select SKY_SND_MICB2_2700
+	select SKY_SND_MBHC_GPIO
+	select SKY_SND_AUTOANSWER
+	select KSKY_RAWDATA
+	select SKY_SND_MODIFIER
+	select NLS_UTF8
+	select PANTECH_SND_QSOUND
+	select SKY_SND_DOCKING_CRADLE
+	select SKY_SND_HEADSET_BUTTON_ADC
+	select PANTECH_MORE_DEBUGGING_INFO_ON_KERNEL
+#	select SKY_SND_SPK_DEBUG_LOG
+	help
+	  Support EF52L Board
+
+config EV10
+	int "Pantech Board Version EV10 Value"
+	default 0
+
+config PT10
+	int "Pantech Board Version PT10 Value"
+	default 10
+
+config PT20
+	int "Pantech Board Version PT20 Value"
+	default 12
+
+config WS10
+	int "Pantech Board Version WS10 Value"
+	default 20
+
+config WS15
+	int "Pantech Board Version WS15 Value"
+	default 21
+
+config WS20
+	int "Pantech Board Version WS20 Value"
+	default 22
+
+config ES10
+	int "Pantech Board Version ES10 Value"
+	default 30
+
+config ES20
+	int "Pantech Board Version ES20 Value"
+	default 32
+
+config TP10
+	int "Pantech Board Version TP10 Value"
+	default 40
+
+config TP20
+	int "Pantech Board Version TP20 Value"
+	default 42
+
+config TP25
+	int "Pantech Board Version TP25 Value"
+	default 43
+
+config TP30
+	int "Pantech Board Version TP30 Value"
+	default 44
+
+config BOARD_VER
+	int "Pantech Board Version Build Target"
+	default 0
+	help
+	  The BOARD_VER is your build target's board version.
+
+config PANTECH_USER_BUILD
+	bool "Pantech User Build Target"
+	default n
+	help
+	  The PANTECH_USER_BUILD is true if you configure build to user.
+
+config PANTECH_GSBI5_UART_CONSOLE
+	bool "Pantech GSBI5 Uart Configuration"
+	default y
+	help
+	  Support GSBI5 UART Console
+
+config SKY_SND_EXTERNAL_AMP
+	bool
+
+config SKY_SND_MODIFIER
+	bool
+
+config SKY_SND_DOCKING_CRADLE
+	bool
+
+config PANTECH_SND_QSOUND
+	bool
+
+#config SKY_SND_SPK_DEBUG_LOG
+#	bool
+
+config SKY_SND_HEADSET_BUTTON_ADC
+	bool
+
+config SKY_SND_MICB2_2700
+	bool
+
+config SKY_SND_MBHC_GPIO
+	bool
+
+config SKY_SND_AUTOANSWER
+	bool
+
+config PANTECH_SMB347_CHARGER
+	bool "Pantech SMB347 charger Configuration"
+	default y
+	depends on I2C
+	help
+	  The smb347 charger chip from summit is a switching mode based
+	  charging solution.
+
+config PANTECH_MAX17058_FG
+	bool "Maxim MAX17058 Fuel Gauge"
+	default y
+	depends on I2C
+	help
+	  MAX17058 is fuel-gauge systems for lithium-ion (Li+) batteries
+	  in handheld and portable equipment. The MAX17058 is configured
+	  to operate with a single lithium cell
+
+config PANTECH_BMS_TEST
+	bool "Pantech BMS Test"
+	default y
+	depends on PANTECH_MAX17058_FG
+	help
+	  PANTECH BSM TEST
+
+##################################################################################
+# PANTECH_SENSOR START
+##################################################################################
+#(-)P11799, 201211
+#config INPUT_HALLSENSOR
+#	depends on ( (SKY_EF51S_BOARD || SKY_EF51K_BOARD || SKY_EF51L_BOARD) && ((BOARD_VER==WS20)||(BOARD_VER==TP10) ))
+#	bool "INPUT HALLSENSOR Configuration"
+#	default y
+#(-)
+##################################################################################
+# PANTECH_SENSOR END
+##################################################################################
+
+# JINHO.PARK.LS4.2013.01.10
+config PANTECH_SOC_HW_REVISION_NUMBER
+	bool
+	default y
+
+##################################################################################
+# PANTECH ERR LOGGING &DUMP START
+##################################################################################
+
+#############
+# ALLWAYS ON #
+#############
+
+config PANTECH_ERR_CRASH_LOGGING
+	bool
+	default y
+
+################
+# SELECTIVELY ON #
+################
+
+# if you want to change DEBUG-MODE when environment are user-build-mode,
+# you just change the value which described default section. (y -> n)
+
+config QC_ABNORMAL_DEBUG_CODE
+	bool
+	default n
+
+config PANTECH_ERR_CRASH_LOGGING
+	bool
+
+config PANTECH_DEBUG_ON
+	bool
+	default y
+	select PANTECH_DEBUG
+
+config PANTECH_DEBUG
+	bool
+	default n
+	select PANTECH_DEBUG_SCHED_LOG
+	select PANTECH_DEBUG_IRQ_LOG
+	select PANTECH_DEBUG_DCVS_LOG
+	select PANTECH_DEBUG_RPM_LOG
+
+config PANTECH_DEBUG_SCHED_LOG
+	bool
+	default n
+
+config PANTECH_DEBUG_IRQ_LOG
+	bool
+	default n
+
+config PANTECH_DEBUG_DCVS_LOG
+	bool
+	default n
+
+config PANTECH_DEBUG_RPM_LOG
+	bool
+	default n
+
+#LS1-SHPARK-TEMP
+config PANTECH_BLOCK
+	bool
+	default y
+
+config FEATURE_PANTECH_SAMSUNG_EMMC_BUG_FIX
+	bool
+	default y
+
+##################################################################################
+# PANTECH ERR LOGGING &DUMP END
+##################################################################################
+
+config PANTECH_MORE_DEBUGGING_INFO_ON_KERNEL
+	bool
+	default y
+
+config PANTECH_PMIC_PWRKEY
+	bool
+	default y
+
+config PANTECH_PDL_DLOAD
+	bool "pantech pdl dload"
+	default y
+	help
+	  We use the "FEATURE_PANTECH_PDL_DLOAD" feature in System area. There is in "vendor/pantech/build/cust_pantech.h" .
+
+config UNUSED_GPIO_MPP_SETTING
+	bool "unused gpio and mpp setting"
+	default y
+	help
+	  We use the "CONFIG_UNUSED_GPIO_MPP_SETTING" feature in System area.
+
+config KSKY_RAWDATA
+	bool "sky_rawdata facility for kernel space"
+	  default y
+
+config PANTECH_EXTERNAL_SDCARD
+	bool
+	default y
+
+config PIEZO_ECO
+	bool "piezo_eco"
+	default n
+	  depends on ( (SKY_EF51S_BOARD || SKY_EF51K_BOARD || SKY_EF51L_BOARD) && (BOARD_VER=TP10 || BOARD_VER=TP20 || BOARD_VER=TP25) )
+
+##################################################################################
+# PANTECH_WLAN START
+##################################################################################
+
+config PANTECH_WLAN_QCOM_PATCH
+	bool
+	default y
+
+config PANTECH_WLAN_802_11_AC_DATA_RATE_DISPLAY
+	bool
+	default y
+
+##################################################################################
+# FEATURE_PANTECH_RESET_DSPS_CORE
+##################################################################################
+
+config FEATURE_PANTECH_RESET_DSPS_CORE
+	bool
+	default y
+
+##################################################################################
+# FEATURE_PANTECH_RESET_DSPS_CORE
+##################################################################################
+
+#P11536-SHPARK-SELinux
+if MACH_APQ8064_EF48S || MACH_APQ8064_EF49K || MACH_APQ8064_EF50L || MACH_APQ8064_EF51S || MACH_APQ8064_EF51K || MACH_APQ8064_EF51L || MACH_APQ8064_EF52S || MACH_APQ8064_EF52K || MACH_APQ8064_EF52L
+config PANTECH_SELINUX_DENIAL_LOG
+	bool
+	default y
+endif
+
+endmenu
+
+config PANTECH_PS_WIFI_COM_PREF_LOGGING
+	depends on WCNSS_CORE
+	bool "PANTECH PS WIFI COM PREF LOGGING"
+	default y
+
+config PANTECH_PS_WQE_COM_PREF_LOGGING
+	depends on WCNSS_CORE
+	bool "PANTECH PS WQE COM PREF LOGGING"
+	default n
+
+endif
