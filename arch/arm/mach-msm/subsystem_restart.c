@@ -137,7 +137,7 @@ static struct subsys_soc_restart_order *restart_orders_8960_sglte[] = {
 static struct subsys_soc_restart_order **restart_orders;
 static int n_restart_orders;
 
-static int restart_level = RESET_SOC;
+static int restart_level = RESET_SUBSYS_INDEPENDENT;
 
 int get_restart_level()
 {
@@ -307,7 +307,7 @@ static void subsystem_shutdown(struct subsys_device *dev, void *data)
 #if defined(CONFIG_LGE_CRASH_HANDLER)
 		msm_set_restart_mode(ssr_magic_number | SUB_THD_F_SD);
 #endif
-		panic("subsys-restart: [%p]: Failed to shutdown %s!",
+		WARN(1, "subsys-restart: [%p]: Failed to shutdown %s!",
 			current, name);
 	}
 }
@@ -324,10 +324,17 @@ static void subsystem_ramdump(struct subsys_device *dev, void *data)
 static void subsystem_powerup(struct subsys_device *dev, void *data)
 {
 	const char *name = dev->desc->name;
+#if defined(CONFIG_LGE_CRASH_HANDLER)
+	int ssr_magic_number = get_ssr_magic_number();
+#endif
 
 	pr_info("[%p]: Powering up %s\n", current, name);
-	if (dev->desc->powerup(dev->desc) < 0)
-		panic("[%p]: Failed to powerup %s!", current, name);
+	if (dev->desc->powerup(dev->desc) < 0) {
+#if defined(CONFIG_LGE_CRASH_HANDLER)
+		msm_set_restart_mode(ssr_magic_number | SUB_THD_F_PWR);
+#endif
+		WARN(1, "[%p]: Failed to powerup %s!", current, name);
+	}
 }
 
 static void subsystem_restart_wq_func(struct work_struct *work)
@@ -341,7 +348,6 @@ static void subsystem_restart_wq_func(struct work_struct *work)
 	struct mutex *shutdown_lock;
 	unsigned count;
 	unsigned long flags;
-
 #if defined(CONFIG_LGE_CRASH_HANDLER)
 	int ssr_magic_number = get_ssr_magic_number();
 #endif
@@ -622,10 +628,7 @@ static int __init ssr_init_soc_restart_orders(void)
 
 static int __init subsys_restart_init(void)
 {
-	restart_level = RESET_SUBSYS_INDEPENDENT;
-
 	ssr_wq = alloc_workqueue("ssr_wq", 0, 0);
-
 	if (!ssr_wq) {
 		pr_err("%s: out of memory\n", __func__);
 		return -ENOMEM;

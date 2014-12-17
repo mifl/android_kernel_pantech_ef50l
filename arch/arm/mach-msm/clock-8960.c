@@ -5637,11 +5637,7 @@ static struct clk_lookup msm_clocks_8960_common[] __initdata = {
 	CLK_LOOKUP("iface_clk",		gsbi4_p_clk.c,		"qup_i2c.4"),
 	CLK_LOOKUP("iface_clk",		gsbi5_p_clk.c,	"msm_serial_hsl.0"),
 	CLK_LOOKUP("iface_clk",		gsbi6_p_clk.c,  "msm_serial_hs.0"),
-#ifdef CONFIG_MACH_LGE
 	CLK_LOOKUP("iface_clk",		gsbi7_p_clk.c,		""),
-#else
-	CLK_LOOKUP("iface_clk",		gsbi7_p_clk.c,		"msm_serial_hsl.0"),
-#endif
 	/* used on 8960 SGLTE for serial console */
 	CLK_LOOKUP("iface_clk",		gsbi8_p_clk.c,	"msm_serial_hsl.1"),
 	/* used on 8960 standalone with Atheros Bluetooth */
