@@ -26,6 +26,14 @@
 
 #include "q6voice.h"
 
+#if QVOICE
+#include <linux/fs.h>
+#include <linux/fcntl.h>
+#include <asm/uaccess.h>
+#endif
+
+#define PR_CMD_RESULT 1
+
 #define TIMEOUT_MS 3000
 
 #define CMD_STATUS_SUCCESS 0
@@ -40,7 +48,9 @@
 /* Total cal needed to support concurrent VOIP & VOLTE sessions */
 /* Due to memory map issue on Q6 separate memory has to be used */
 /* for VOIP & VOLTE  */
+
 #define TOTAL_VOICE_CAL_SIZE	(NUM_VOICE_CAL_BUFFERS * VOICE_CAL_BUFFER_SIZE)
+
 
 static struct common_data common;
 
@@ -72,6 +82,651 @@ static int32_t qdsp_mvm_callback(struct apr_client_data *data, void *priv);
 static int32_t qdsp_cvs_callback(struct apr_client_data *data, void *priv);
 static int32_t qdsp_cvp_callback(struct apr_client_data *data, void *priv);
 static int voice_send_set_device_cmd_v2(struct voice_data *v);
+#if QVOICE || PR_CMD_RESULT
+
+// --- VSS definitions not provided in q6voice.h
+#define VSS_ICOMMON_CMD_GET_UI_PROPERTY 0x00011105
+#define VSS_ICOMMON_CMD_SET_PARAM 0x00011006
+#define VSS_ICOMMON_CMD_GET_PARAM 0x00011007
+
+#endif // QVOICE || PR_CMD_RESULT
+
+#if QVOICE
+
+// --- VSS definitions not provided in q6voice.h
+
+struct network_header_t {
+	uint32_t network_id;
+	uint32_t data_len;
+};
+
+struct vss_icommon_param_hdr_t {
+	uint32_t module_id;
+	uint32_t param_id;
+	uint16_t param_size;
+	uint16_t reserved;
+};
+
+struct vss_icommon_cmd_set_param_t {
+	uint32_t payload_address;
+	uint32_t payload_size;
+};
+
+struct vss_icommon_cmd_get_param_t {
+	uint32_t payload_address;
+	struct vss_icommon_param_hdr_t param_hdr;
+};
+
+struct cvp_get_param_cmd {
+	struct apr_hdr hdr;
+	uint32_t payload_address;
+	struct vss_icommon_param_hdr_t param_hdr;
+} __packed;
+
+struct vss_icommon_rsp_get_param_t {
+	uint32_t status;
+};
+
+struct vss_icommon_rsp_get_optimal_delay_t {
+	uint32_t status;
+	struct vss_icommon_param_hdr_t param_hdr;
+	int16_t optimal_delay;
+	uint16_t reserved;
+};
+
+#define VSS_IVOCPROC_TOPOLOGY_ID_TX_SM_AEC			0x1000c100
+#define VSS_IVOCPROC_TOPOLOGY_ID_TX_DM_AEC			0x1000c101
+#define VSS_IVOCPROC_TOPOLOGY_ID_TX_SM_SUBBAND		0x1000c102
+#define VSS_IVOCPROC_TOPOLOGY_ID_TX_DM_SUBBAND		0x1000c103
+
+#define VOICE_MODULE_AEC				0x1000C110
+#define VOICE_PARAM_AEC_LENGTH			0x1000C133
+#define VOICE_PARAM_DELAYCALIBRATION	0x1000C13A
+
+#define VSS_NETWORK_ID_CDMA_NB				0x00010021
+#define VSS_NETWORK_ID_CDMA_WB				0x00010022
+#define VSS_NETWORK_ID_CDMA_WV				0x00011100
+#define VSS_NETWORK_ID_GSM_NB				0x00010023
+#define VSS_NETWORK_ID_GSM_WB				0x00010024
+#define VSS_NETWORK_ID_GSM_WV				0x00011101
+#define VSS_NETWORK_ID_WCDMA_NB				0x00010025
+#define VSS_NETWORK_ID_WCDMA_WB				0x00010026
+#define VSS_NETWORK_ID_WCDMA_WV				0x00011102
+#define VSS_NETWORK_ID_LTE_NB				0x00011324
+#define VSS_NETWORK_ID_LTE_WB				0x00011325
+#define VSS_NETWORK_ID_LTE_WV				0x00011326
+
+// --- qvoice calibration file definitions
+
+struct chunk_t {
+	uint32_t id;
+	uint32_t size;
+};
+
+#define FOURCC_RIFF			0x46464952		// 'RIFF'
+#define FOURCC_QCAL			0x4c414351		// 'QCAL' - file type
+#define FOURCC_CALV			0x564c4143		// 'CALV' - calibration file version
+#define FOURCC_CAL			0x204c4143		// 'CAL ' - calibration data
+
+#define CAL_VERSION 1
+
+struct file_header_t {
+	uint32_t version;
+};
+
+struct cal_header_t {
+	uint32_t mode;
+	uint32_t topology_id;
+	uint32_t pad_size;
+};
+
+// flags in option field following end of cal_header_t
+#define OPTION_QVOICE_CAL_DISABLED		0x00000001
+#define OPTION_CVP_CAL_DISABLED			0x00000002
+#define OPTION_VOL_CAL_DISABLED			0x00000004
+#define OPTION_GET_OPTIMAL_DELAY		0x00000008
+
+void voc_set_phone_mode(int phone_mode)
+{
+	common.qvoice.phone_mode = phone_mode;
+}
+
+int voc_get_phone_mode(void)
+{
+	return common.qvoice.phone_mode;
+}
+
+static void qvoice_close_cal_file(void)
+{
+	if (common.qvoice.file_alloc) {
+		kfree(common.qvoice.file_alloc);
+		common.qvoice.file_alloc = 0;
+	}
+}
+
+static bool qvoice_load_cal_file(void)
+{
+	int result;
+	mm_segment_t old_fs;
+	struct file* file = 0;
+	long file_len;
+	void* buffer;
+	struct chunk_t* chunk_p;
+	uint32_t* id_p;
+	struct kstat kstat;
+	static const char* file_name = "/etc/voice_cal.qvdb";
+
+	memset(&kstat, 0, sizeof(kstat));
+	old_fs = get_fs();
+	set_fs(KERNEL_DS);
+	result = vfs_stat(file_name, &kstat);
+
+	if (result!=0) {
+		set_fs(old_fs);
+		qvoice_close_cal_file();
+		return false;
+	}
+	if (common.qvoice.file_alloc) {
+		if (kstat.mtime.tv_sec!=0 && common.qvoice.file_mtime!=0 && kstat.mtime.tv_sec==common.qvoice.file_mtime) {
+			set_fs(old_fs);
+			return true;
+		}
+		// reload if the time has changed
+		printk(KERN_DEBUG "voice_cal.qvdb changed!");
+		qvoice_close_cal_file();
+	}
+
+	file = filp_open(file_name, O_RDONLY, 0);
+	if (IS_ERR(file)) {
+		pr_err("could not open QVoice config file %s", file_name);
+		goto fail;
+	}
+
+	file_len = file->f_op->llseek(file, 0, SEEK_END);
+	common.qvoice.file_alloc = kmalloc(file_len, GFP_KERNEL);
+	if (!common.qvoice.file_alloc) {
+		pr_err("could not allocate memory for QVoice cal: %ld required", file_len);
+		goto fail;
+	}
+	file->f_op->llseek(file, 0, SEEK_SET);
+	buffer = (void*)common.qvoice.file_alloc;
+	result = file->f_op->read(file, buffer, file_len, &file->f_pos);
+	if (result<0) {
+		pr_err("read error %d loading QVoice cal", -result);
+		goto fail;
+	}
+	filp_close(file, NULL);
+	file = 0;
+
+	set_fs(old_fs);
+
+	// check results
+	chunk_p = (struct chunk_t*)buffer;
+	id_p = (uint32_t*)(chunk_p+1);
+	if (chunk_p->size>=result || chunk_p->id!=FOURCC_RIFF || *id_p!=FOURCC_QCAL) {
+		pr_err("invalid QVoice calibration data: size=%d, id=%08x", chunk_p->size, *id_p);
+		return false;
+	}
+
+	printk(KERN_DEBUG "### QVoice calibration file loaded");
+	common.qvoice.file_mtime = kstat.mtime.tv_sec;
+	return true;
+fail:
+	if (file && !IS_ERR(file)) {
+		filp_close(file, NULL);
+	}
+	set_fs(old_fs);
+	qvoice_close_cal_file();
+	return false;
+}
+
+static uint32_t get_network_rate(uint32_t network_id)
+{
+	switch (network_id) {
+	case VSS_NETWORK_ID_CDMA_NB:
+	case VSS_NETWORK_ID_GSM_NB:
+	case VSS_NETWORK_ID_WCDMA_NB:
+	case VSS_NETWORK_ID_VOIP_NB:
+	case VSS_NETWORK_ID_LTE_NB:
+	case VSS_NETWORK_ID_CDMA_WV:
+	case VSS_NETWORK_ID_GSM_WV:
+	case VSS_NETWORK_ID_WCDMA_WV:
+	case VSS_NETWORK_ID_VOIP_WV:
+	case VSS_NETWORK_ID_LTE_WV:
+		return 8000;
+
+	case VSS_NETWORK_ID_CDMA_WB:
+	case VSS_NETWORK_ID_GSM_WB:
+	case VSS_NETWORK_ID_WCDMA_WB:
+	case VSS_NETWORK_ID_VOIP_WB:
+	case VSS_NETWORK_ID_LTE_WB:
+		return 16000;
+
+	default:
+		return 0;
+	}
+}
+
+static int get_network_path_type(uint32_t network_id)
+{
+	switch (network_id) {
+	case VSS_NETWORK_ID_CDMA_NB:
+	case VSS_NETWORK_ID_CDMA_WB:
+	case VSS_NETWORK_ID_GSM_NB:
+	case VSS_NETWORK_ID_GSM_WB:
+	case VSS_NETWORK_ID_WCDMA_NB:
+	case VSS_NETWORK_ID_WCDMA_WB:
+	case VSS_NETWORK_ID_CDMA_WV:
+	case VSS_NETWORK_ID_GSM_WV:
+	case VSS_NETWORK_ID_WCDMA_WV:
+		return VOC_PATH_PASSIVE;
+
+	case VSS_NETWORK_ID_VOIP_NB:
+	case VSS_NETWORK_ID_VOIP_WB:
+	case VSS_NETWORK_ID_VOIP_WV:
+		return VOC_PATH_FULL;
+
+	case VSS_NETWORK_ID_LTE_NB:
+	case VSS_NETWORK_ID_LTE_WB:
+	case VSS_NETWORK_ID_LTE_WV:
+		return VOC_PATH_VOLTE_PASSIVE;
+
+	default:
+		return -1;
+	}
+}
+
+enum {
+	match_none,
+	match_mode,
+	match_mode_rate,
+	match_mode_rate_cs,
+	match_mode_rate_path,
+	match_exact
+};
+
+static const char* match_str[] = {
+	"none",
+	"mode",
+	"mode+rate",
+	"mode+rate+cs",
+	"mode+rate+path",
+	"exact"
+};
+
+static int chunk_get_phone_mode(struct chunk_t* chunk_p)
+{
+	struct cal_header_t* header_p;
+
+	header_p = (struct cal_header_t*)(chunk_p+1);
+	return header_p->mode;
+}
+
+static uint32_t chunk_get_network_id(struct chunk_t* chunk_p)
+{
+	struct cal_header_t* header_p;
+	struct network_header_t* network_p;
+
+	header_p = (struct cal_header_t*)(chunk_p+1);
+	network_p = (struct network_header_t*)((uint8_t*)(header_p+1)+header_p->pad_size);
+	return network_p->network_id;
+}
+
+static int get_score(struct chunk_t* chunk_p)
+{
+	uint32_t network_id;
+	int want_path_type;
+	int this_path_type;
+	int score;
+
+	if (chunk_get_phone_mode(chunk_p)==common.qvoice.phone_mode) {
+		network_id = chunk_get_network_id(chunk_p);
+		if (network_id==common.mvs_info.network_type) {
+			score = match_exact;
+		}
+		else if (get_network_rate(common.mvs_info.network_type)==get_network_rate(network_id)) {
+			want_path_type = get_network_path_type(common.mvs_info.network_type);
+			this_path_type = get_network_path_type(network_id);
+			if (this_path_type==want_path_type) {
+				score = match_mode_rate_path;
+			}
+			else if ((this_path_type==VOC_PATH_PASSIVE && want_path_type==VOC_PATH_PASSIVE) ||
+						(this_path_type!=VOC_PATH_PASSIVE && want_path_type!=VOC_PATH_PASSIVE)) {
+				score = match_mode_rate_cs;
+			}
+			else {
+				score = match_mode_rate;
+			}
+		}
+		else {
+			score = match_mode;
+		}
+	}
+	else {
+		score = match_none;
+	}
+	return score;
+}
+#if defined(CONFIG_SKY_EF51S_BOARD)
+#include "voice_cal_ef51s.h"
+#elif defined(CONFIG_SKY_EF51K_BOARD)
+#include "voice_cal_ef51k.h" 
+#elif defined(CONFIG_SKY_EF51L_BOARD)
+#include "voice_cal_ef51l.h"
+#elif defined(CONFIG_SKY_EF52S_BOARD)
+#include "voice_cal_ef52s.h"
+#elif defined(CONFIG_SKY_EF52K_BOARD)
+#include "voice_cal_ef52k.h" 
+#elif defined(CONFIG_SKY_EF52L_BOARD)
+#include "voice_cal_ef52l.h"
+#endif
+
+static struct chunk_t* qvoice_find_cal(void)
+{
+	struct chunk_t* chunk_p;
+	uint8_t* data;
+	uint8_t* end;
+	int chunks = 0;
+	struct chunk_t* best_chunk = 0;
+	int best_score = -1;
+	int this_score;
+	struct file_header_t* file_header_p;
+
+	if (common.qvoice.chunk_p) {
+		return common.qvoice.chunk_p;
+	}
+
+	// get file chunk
+	if (qvoice_load_cal_file()) {
+		chunk_p = (struct chunk_t*)common.qvoice.file_alloc;
+	}
+	else {
+		chunk_p = (struct chunk_t*)qvoice_cal_default;
+	}
+
+	// set up pointers to first chunk and end of data
+	data = (uint8_t*)(chunk_p+1);
+	end = data+chunk_p->size;
+	data += sizeof(uint32_t);			// skip file type
+
+	for (; data<end; data += chunk_p->size) {
+		chunk_p = (struct chunk_t*)data;
+		data = (uint8_t*)(chunk_p+1);
+
+		if (chunk_p->id==FOURCC_CALV) {
+			// check for backwards compatibility here (only one version so far, so nothing
+			// to do
+			file_header_p = (struct file_header_t*)data;
+			if (file_header_p->version<CAL_VERSION) {
+			}
+		}
+		else if (chunk_p->id==FOURCC_CAL) {
+			this_score = get_score(chunk_p);
+			if (this_score>best_score) {
+				best_chunk = chunk_p;
+				best_score = this_score;
+				if (best_score==match_exact) {
+					// exact match, return immediately
+					break;
+				}
+			}
+		}
+		if (chunks++>100) {
+			// probable error: terminate search
+			pr_err("QVoice cal file format error: too many chunks!!");
+			break;
+		}
+	}
+	if (best_chunk) {
+		printk(KERN_DEBUG "found qvoice chunk with score '%s', mode = %d, network id = 0x%x",
+			match_str[best_score], chunk_get_phone_mode(best_chunk), chunk_get_network_id(best_chunk));
+	}
+	else {
+		printk(KERN_DEBUG "no qvoice chunk found!");
+	}
+	common.qvoice.chunk_p = best_chunk;
+	return common.qvoice.chunk_p;
+}
+
+static uint32_t get_qvoice_tx_topology(void)
+{
+	struct chunk_t* chunk_p;
+
+	chunk_p = qvoice_find_cal();
+	if (chunk_p) {
+		struct cal_header_t* header_p = (struct cal_header_t*)(chunk_p+1);
+		return header_p->topology_id;
+	}
+	return 0;
+}
+
+static bool qvoice_get_options(uint32_t* options_p)
+{
+	struct chunk_t* chunk_p;
+	struct cal_header_t* header_p;
+
+	chunk_p = qvoice_find_cal();
+	if (chunk_p) {
+		header_p = (struct cal_header_t*)(chunk_p+1);
+		if (header_p->pad_size>=4) {
+			*options_p = *(uint32_t*)(header_p+1);
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool qvoice_disabled(void)
+{
+	uint32_t options;
+
+	if (!qvoice_get_options(&options)) 
+	{
+		//20140523 frogLove_KK : skip the check of 'options' field because EF52S's Cal data doesn't have it.
+		return false; //true;
+	}
+	return (options&OPTION_QVOICE_CAL_DISABLED)!=0;
+}
+
+static bool cvp_cal_disabled(void)
+{
+	uint32_t options;
+
+	if (!qvoice_get_options(&options)) return false;
+	return (options&OPTION_CVP_CAL_DISABLED)!=0;
+}
+
+static bool qvoice_get_delay_enabled(void)
+{
+	uint32_t options;
+
+	if (!qvoice_get_options(&options)) return false;
+	return (options&OPTION_GET_OPTIMAL_DELAY)!=0;
+}
+
+static int qvoice_get_optimal_delay(struct voice_data *v);
+
+#endif // QVOICE
+
+#if PR_CMD_RESULT
+
+// --- utilities to make kernel logs more readable
+
+#define sizeof_array(a) (sizeof(a)/sizeof(a[0]))
+
+static const uint32_t CmdTable[] = {
+	APRV2_IBASIC_CMD_DESTROY_SESSION,
+	VOICE_CMD_SET_PARAM,
+	VOICE_CMD_GET_PARAM,
+	VSS_ICOMMON_CMD_MAP_MEMORY,
+	VSS_ICOMMON_CMD_SET_NETWORK,
+	VSS_ICOMMON_CMD_SET_UI_PROPERTY,
+	VSS_ICOMMON_CMD_GET_UI_PROPERTY,
+	VSS_ICOMMON_CMD_SET_VOICE_TIMING,
+	VSS_ICOMMON_CMD_UNMAP_MEMORY,
+	VSS_IMVM_CMD_ATTACH_STREAM,
+	VSS_IMVM_CMD_ATTACH_VOCPROC,
+	VSS_IMVM_CMD_CREATE_FULL_CONTROL_SESSION,
+	VSS_IMVM_CMD_CREATE_PASSIVE_CONTROL_SESSION,
+	VSS_IMVM_CMD_DETACH_STREAM,
+	VSS_IMVM_CMD_DETACH_VOCPROC,
+	VSS_IMVM_CMD_SET_POLICY_DUAL_CONTROL,
+	VSS_IMVM_CMD_STANDBY_VOICE,
+	VSS_IMVM_CMD_START_VOICE,
+	VSS_IMVM_CMD_STOP_VOICE,
+	VSS_ISTREAM_CMD_CDMA_SET_ENC_MINMAX_RATE,
+	VSS_ISTREAM_CMD_CREATE_FULL_CONTROL_SESSION,
+	VSS_ISTREAM_CMD_CREATE_PASSIVE_CONTROL_SESSION,
+	VSS_ISTREAM_CMD_DEREGISTER_CALIBRATION_DATA,
+	VSS_ISTREAM_CMD_REGISTER_CALIBRATION_DATA,
+	VSS_ISTREAM_CMD_SET_ENC_DTX_MODE,
+	VSS_ISTREAM_CMD_SET_MEDIA_TYPE,
+	VSS_ISTREAM_CMD_SET_MUTE,
+	VSS_ISTREAM_CMD_SET_TTY_MODE,
+	VSS_ISTREAM_CMD_START_PLAYBACK,
+	VSS_ISTREAM_CMD_START_RECORD,
+	VSS_ISTREAM_CMD_STOP_PLAYBACK,
+	VSS_ISTREAM_CMD_STOP_RECORD,
+	VSS_ISTREAM_CMD_VOC_AMRWB_SET_ENC_RATE,
+	VSS_ISTREAM_CMD_VOC_AMR_SET_ENC_RATE,
+	VSS_IVOCPROC_CMD_CREATE_FULL_CONTROL_SESSION,
+	VSS_IVOCPROC_CMD_DEREGISTER_CALIBRATION_DATA,
+	VSS_IVOCPROC_CMD_DEREGISTER_VOLUME_CAL_TABLE,
+	VSS_IVOCPROC_CMD_DISABLE,
+	VSS_IVOCPROC_CMD_ENABLE,
+	VSS_IVOCPROC_CMD_REGISTER_CALIBRATION_DATA,
+	VSS_IVOCPROC_CMD_REGISTER_VOLUME_CAL_TABLE,
+	VSS_IVOCPROC_CMD_SET_DEVICE,
+	VSS_IVOCPROC_CMD_SET_MUTE,
+	VSS_IVOCPROC_CMD_SET_RX_VOLUME_INDEX,
+	VSS_IWIDEVOICE_CMD_SET_WIDEVOICE,
+};
+
+static const char* const CmdStrings[] = {
+	"APRV2_IBASIC_CMD_DESTROY_SESSION",
+	"VOICE_CMD_SET_PARAM",
+	"VOICE_CMD_GET_PARAM",
+	"VSS_ICOMMON_CMD_MAP_MEMORY",
+	"VSS_ICOMMON_CMD_SET_NETWORK",
+	"VSS_ICOMMON_CMD_SET_UI_PROPERTY",
+	"VSS_ICOMMON_CMD_GET_UI_PROPERTY",
+	"VSS_ICOMMON_CMD_SET_VOICE_TIMING",
+	"VSS_ICOMMON_CMD_UNMAP_MEMORY",
+	"VSS_IMVM_CMD_ATTACH_STREAM",
+	"VSS_IMVM_CMD_ATTACH_VOCPROC",
+	"VSS_IMVM_CMD_CREATE_FULL_CONTROL_SESSION",
+	"VSS_IMVM_CMD_CREATE_PASSIVE_CONTROL_SESSION",
+	"VSS_IMVM_CMD_DETACH_STREAM",
+	"VSS_IMVM_CMD_DETACH_VOCPROC",
+	"VSS_IMVM_CMD_SET_POLICY_DUAL_CONTROL",
+	"VSS_IMVM_CMD_STANDBY_VOICE",
+	"VSS_IMVM_CMD_START_VOICE",
+	"VSS_IMVM_CMD_STOP_VOICE",
+	"VSS_ISTREAM_CMD_CDMA_SET_ENC_MINMAX_RATE",
+	"VSS_ISTREAM_CMD_CREATE_FULL_CONTROL_SESSION",
+	"VSS_ISTREAM_CMD_CREATE_PASSIVE_CONTROL_SESSION",
+	"VSS_ISTREAM_CMD_DEREGISTER_CALIBRATION_DATA",
+	"VSS_ISTREAM_CMD_REGISTER_CALIBRATION_DATA",
+	"VSS_ISTREAM_CMD_SET_ENC_DTX_MODE",
+	"VSS_ISTREAM_CMD_SET_MEDIA_TYPE",
+	"VSS_ISTREAM_CMD_SET_MUTE",
+	"VSS_ISTREAM_CMD_SET_TTY_MODE",
+	"VSS_ISTREAM_CMD_START_PLAYBACK",
+	"VSS_ISTREAM_CMD_START_RECORD",
+	"VSS_ISTREAM_CMD_STOP_PLAYBACK",
+	"VSS_ISTREAM_CMD_STOP_RECORD",
+	"VSS_ISTREAM_CMD_VOC_AMRWB_SET_ENC_RATE",
+	"VSS_ISTREAM_CMD_VOC_AMR_SET_ENC_RATE",
+	"VSS_IVOCPROC_CMD_CREATE_FULL_CONTROL_SESSION",
+	"VSS_IVOCPROC_CMD_DEREGISTER_CALIBRATION_DATA",
+	"VSS_IVOCPROC_CMD_DEREGISTER_VOLUME_CAL_TABLE",
+	"VSS_IVOCPROC_CMD_DISABLE",
+	"VSS_IVOCPROC_CMD_ENABLE",
+	"VSS_IVOCPROC_CMD_REGISTER_CALIBRATION_DATA",
+	"VSS_IVOCPROC_CMD_REGISTER_VOLUME_CAL_TABLE",
+	"VSS_IVOCPROC_CMD_SET_DEVICE",
+	"VSS_IVOCPROC_CMD_SET_MUTE",
+	"VSS_IVOCPROC_CMD_SET_RX_VOLUME_INDEX",
+	"VSS_IWIDEVOICE_CMD_SET_WIDEVOICE",
+};
+
+static const uint32_t adsp_errors[] = {
+	ADSP_EOK,
+	ADSP_EFAILED,
+	ADSP_EBADPARAM,
+	ADSP_EUNSUPPORTED,
+	ADSP_EVERSION,
+	ADSP_EUNEXPECTED,
+	ADSP_EPANIC,
+	ADSP_ENORESOURCE,
+	ADSP_EHANDLE,
+	ADSP_EALREADY,
+	ADSP_ENOTREADY,
+	ADSP_EPENDING,
+	ADSP_EBUSY,
+	ADSP_EABORTED,
+	ADSP_EPREEMPTED,
+	ADSP_ECONTINUE,
+	ADSP_EIMMEDIATE,
+	ADSP_ENOTIMPL,
+	ADSP_ENEEDMORE
+};
+
+static const char* const adsp_strings[] = {
+	"ok",
+	"failed",
+	"badparam",
+	"unsupported",
+	"version",
+	"unexpected",
+	"panic",
+	"noresource",
+	"handle",
+	"already",
+	"notready",
+	"pending",
+	"busy",
+	"aborted",
+	"preempted",
+	"continue",
+	"immediate",
+	"notimpl",
+	"needmore"
+};
+
+static int find(uint32_t key, const uint32_t* keys, size_t n)
+{
+	size_t i;
+	for (i = 0; i<n; i++) {
+		if (key==keys[i]) return i;
+	}
+	return -1;
+}
+
+static void pr_cmd_result(uint32_t* ptr)
+{
+	int i;
+	int j;
+	i = find(ptr[0], CmdTable, sizeof_array(CmdTable));
+	j = find(ptr[1], adsp_errors, sizeof(adsp_errors));
+	if (i>=0) {
+		if (j>=0) {
+			pr_info("%s %s\n", CmdStrings[i], adsp_strings[j]);
+		}
+		else {
+			pr_info("%s %x\n", CmdStrings[i], ptr[1]);
+		}
+	}
+	else {
+		if (j>=0) {
+			pr_info("%x %s\n", ptr[0], adsp_strings[j]);
+		}
+		else {
+			pr_info("%x %x\n", ptr[0], ptr[1]);
+		}
+	}
+}
+#endif // PR_CMD_RESULT
 
 static u16 voice_get_mvm_handle(struct voice_data *v)
 {
@@ -1214,6 +1869,14 @@ static int voice_send_set_device_cmd(struct voice_data *v)
 	/* Use default topology if invalid value in ACDB */
 	cvp_setdev_cmd.cvp_set_device.tx_topology_id =
 				get_voice_tx_topology();
+#if QVOICE
+	if (!qvoice_disabled()) {
+		cvp_setdev_cmd.cvp_set_device.tx_topology_id =
+					get_qvoice_tx_topology();
+	}
+	printk(KERN_DEBUG "voice_send_set_device_cmd: topology = %08x",
+		cvp_setdev_cmd.cvp_set_device.tx_topology_id);
+#endif
 	if (cvp_setdev_cmd.cvp_set_device.tx_topology_id == 0)
 		cvp_setdev_cmd.cvp_set_device.tx_topology_id =
 				VSS_IVOCPROC_TOPOLOGY_ID_TX_SM_ECNS;
@@ -1530,6 +2193,14 @@ static int voice_send_cvp_map_memory_cmd(struct voice_data *v)
 
 	/* get all cvp cal data */
 	get_all_cvp_cal(&cal_block);
+#if QVOICE
+	if (cvp_cal_disabled()) {
+		// no cvp cal, so only use vocvol size
+		get_all_vocvol_cal(&cal_block);
+	}
+	printk(KERN_DEBUG "voice_send_cvp_map_memory_cmd: cal_size = %d",
+		cal_block.cal_size);
+#endif
 	if (cal_block.cal_size == 0 ||
 	    cal_block.cal_size > CVP_CAL_SIZE)
 		goto fail;
@@ -1603,6 +2274,16 @@ static int voice_send_cvp_unmap_memory_cmd(struct voice_data *v)
 	uint32_t cal_paddr = 0;
 
 	get_all_cvp_cal(&cal_block);
+#if QVOICE
+	if (cvp_cal_disabled()) {
+		get_all_vocvol_cal(&cal_block);
+	}
+	if (!qvoice_disabled() && qvoice_get_delay_enabled()) {
+		qvoice_get_optimal_delay(v);
+	}
+	common.qvoice.chunk_p = 0;
+	printk(KERN_DEBUG "voice_send_cvp_unmap_memory_cmd: cal_size = %d", cal_block.cal_size);
+#endif
 	if (cal_block.cal_size == 0 ||
 	    cal_block.cal_size > CVP_CAL_SIZE)
 		return 0;
@@ -1803,6 +2484,48 @@ fail:
 
 }
 
+#if 1 // SR 1340074 Subject: [PATCH] ASoC: msm: Unmap ACDB memory with Q6 on ACDB close
+int voice_unmap_cal_blocks(void)
+{
+	struct voice_data	*v = NULL;
+	int	i;
+	int	result = 0;
+	int	result2 = 0;
+
+	pr_debug("%s\n", __func__);
+	mutex_lock(&common.common_lock);
+
+	for (i = 0; i < MAX_VOC_SESSIONS; i++) {
+		v = &common.voice[i];
+		mutex_lock(&v->lock);
+
+		if ((v->voc_state == VOC_RUN) ||
+			(v->voc_state == VOC_CHANGE) ||
+			(v->voc_state == VOC_STANDBY)) {
+			result2 = voc_standby_voice_call(v->session_id);
+			if (result2 < 0) {
+				pr_err("%s: voc_standby_voice_call Failed for session 0x%x! err %d\n",
+						__func__, v->session_id,
+						result2);
+				result = result2;
+			}
+			/* deregister cvp and vol cal */
+			voice_send_cvp_deregister_vol_cal_table_cmd(v);
+			voice_send_cvp_deregister_cal_cmd(v);
+			voice_send_cvp_unmap_memory_cmd(v);
+
+			/* deregister cvs cal */
+			voice_send_cvs_deregister_cal_cmd(v);
+			voice_send_cvs_unmap_memory_cmd(v);
+		}
+
+		mutex_unlock(&v->lock);
+	}
+	mutex_unlock(&common.common_lock);
+	return result;
+}
+#endif
+
 static int voice_send_cvp_register_cal_cmd(struct voice_data *v)
 {
 	struct cvp_register_cal_data_cmd cvp_reg_cal_cmd;
@@ -1815,6 +2538,11 @@ static int voice_send_cvp_register_cal_cmd(struct voice_data *v)
 
       /* get the cvp cal data */
 	get_all_vocproc_cal(&cal_block);
+#if QVOICE
+	if (cvp_cal_disabled()) {
+		cal_block.cal_size = 0;
+	}
+#endif
 	if (cal_block.cal_size == 0 ||
 	    cal_block.cal_size > CVP_CAL_SIZE)
 		goto fail;
@@ -1842,8 +2570,13 @@ static int voice_send_cvp_register_cal_cmd(struct voice_data *v)
 		if (ret < 0)
 			return ret;
 
+#if QVOICE
+		printk(KERN_DEBUG "voice_send_cvp_register_cal_cmd: kvaddr = %x, paddr = %x, cal_size = %d",
+			cal_buf, cal_paddr, cal_block.cal_size);
+#endif
 		memcpy((void *)cal_buf, (void *)cal_block.cal_kvaddr,
 			cal_block.cal_size);
+
 	} else {
 		cal_paddr = cal_block.cal_paddr;
 	}
@@ -1890,7 +2623,14 @@ static int voice_send_cvp_deregister_cal_cmd(struct voice_data *v)
 	void *apr_cvp;
 	u16 cvp_handle;
 
+
 	get_all_vocproc_cal(&cal_block);
+#if QVOICE
+	if (cvp_cal_disabled()) {
+		cal_block.cal_size = 0;
+	}
+	printk(KERN_DEBUG "voice_send_cvp_deregister_cal_cmd: cal_size = %d", cal_block.cal_size);
+#endif
 	if (cal_block.cal_size == 0 ||
 	    cal_block.cal_size > CVP_CAL_SIZE)
 		return 0;
@@ -1951,8 +2691,16 @@ static int voice_send_cvp_register_vol_cal_table_cmd(struct voice_data *v)
 
 	/* get the cvp vol cal data */
 	get_all_vocvol_cal(&vol_block);
+
 	get_all_vocproc_cal(&voc_block);
+
 	get_all_cvp_cal(&cvp_block);
+
+#if QVOICE
+	if (cvp_cal_disabled()) {
+		voc_block.cal_size = 0;
+	}
+#endif
 
 	if (vol_block.cal_size == 0 ||
 	    cvp_block.cal_size > CVP_CAL_SIZE)
@@ -1984,6 +2732,10 @@ static int voice_send_cvp_register_vol_cal_table_cmd(struct voice_data *v)
 
 		memcpy((void *)(cal_buf + voc_block.cal_size),
 			(void *)vol_block.cal_kvaddr, vol_block.cal_size);
+#if QVOICE
+		printk(KERN_DEBUG "voice_send_cvp_register_vol_cal_table_cmd: kvaddr = %x, paddr = %x, cal_size = %d",
+			cal_buf + voc_block.cal_size, cal_paddr, vol_block.cal_size);
+#endif
 	} else {
 		cal_paddr = vol_block.cal_paddr;
 	}
@@ -2189,6 +2941,133 @@ fail:
 	return -EINVAL;
 }
 
+#if QVOICE
+
+struct cvp_set_param_cmd_t {
+	struct apr_hdr hdr;
+	struct vss_icommon_cmd_set_param_t params;
+};
+
+static int qvoice_send_cal(struct voice_data* v)
+{
+	uint32_t cmd_size;
+	struct cvp_set_param_cmd_t* cmd = 0;
+	int ret = 0;
+	struct chunk_t* chunk_p;
+	struct cal_header_t* qv_header;
+	struct network_header_t* qv_network;
+	uint8_t* qv_data;
+	uint32_t qv_size;
+
+	if (qvoice_disabled()) {
+		return 0;
+	}
+	chunk_p = qvoice_find_cal();
+	if (chunk_p) {
+		// locate the start of the calibration data in the supplied chunk
+		qv_header = (struct cal_header_t*)(chunk_p+1);
+		qv_network = (struct network_header_t*)((uint8_t*)(qv_header+1)+qv_header->pad_size);
+		qv_data = (uint8_t*)(qv_network+1);
+		qv_size = chunk_p->size - (qv_data-(uint8_t*)qv_header);
+
+		cmd_size = sizeof(struct cvp_set_param_cmd_t)+qv_size;
+		cmd = (struct cvp_set_param_cmd_t*)kmalloc(cmd_size, GFP_KERNEL);
+		if (!cmd) {
+			ret = -EINVAL;
+			goto done;
+		}
+
+		/* fill in the header */
+		cmd->hdr.hdr_field = APR_HDR_FIELD(APR_MSG_TYPE_SEQ_CMD,
+					APR_HDR_LEN(APR_HDR_SIZE), APR_PKT_VER);
+		cmd->hdr.pkt_size = APR_PKT_SIZE(APR_HDR_SIZE,
+					cmd_size - APR_HDR_SIZE);
+		cmd->hdr.src_port = v->session_id;
+		cmd->hdr.dest_port = voice_get_cvp_handle(v);
+		cmd->hdr.token = 0;
+		cmd->hdr.opcode = VSS_ICOMMON_CMD_SET_PARAM;
+		cmd->params.payload_address = 0;
+		cmd->params.payload_size = qv_size;
+		memcpy(cmd+1, qv_data, qv_size);
+
+		printk(KERN_DEBUG "sending qvoice calibration (ptr = %p, size = %d)", cmd, cmd->params.payload_size);
+		v->cvp_state = CMD_STATUS_FAIL;
+		ret = apr_send_pkt(common.apr_q6_cvp, (uint32_t *)cmd);
+		if (ret < 0) {
+			pr_err("Fail: sending cvp qvoice set param");
+			goto done;
+		}
+		ret = wait_event_timeout(v->cvp_wait,
+			(v->cvp_state == CMD_STATUS_SUCCESS),
+				msecs_to_jiffies(TIMEOUT_MS));
+		if (!ret) {
+			pr_err("%s: wait_event timeout\n", __func__);
+			goto done;
+		}
+	}
+done:
+	if (cmd) {
+		kfree(cmd);
+	}
+	return ret;
+}
+
+static int qvoice_get_optimal_delay(struct voice_data *v)
+{
+	struct cvp_get_param_cmd cmd;
+	int ret = 0;
+	void *apr_cvp;
+	u16 cvp_handle;
+
+	if (v == NULL) {
+		pr_err("%s: v is NULL\n", __func__);
+		return -EINVAL;
+	}
+	apr_cvp = common.apr_q6_cvp;
+
+	if (!apr_cvp) {
+		pr_err("%s: apr_cvp is NULL.\n", __func__);
+		return -EINVAL;
+	}
+	cvp_handle = voice_get_cvp_handle(v);
+
+	/* fill in the header */
+	cmd.hdr.hdr_field = APR_HDR_FIELD(APR_MSG_TYPE_SEQ_CMD,
+				APR_HDR_LEN(APR_HDR_SIZE), APR_PKT_VER);
+	cmd.hdr.pkt_size = APR_PKT_SIZE(APR_HDR_SIZE,
+				sizeof(cmd) - APR_HDR_SIZE);
+	cmd.hdr.src_port = v->session_id;
+	cmd.hdr.dest_port = cvp_handle;
+	cmd.hdr.token = 0;
+	cmd.hdr.opcode = VSS_ICOMMON_CMD_GET_PARAM;
+
+	cmd.payload_address = 0;
+	cmd.param_hdr.module_id = VOICE_MODULE_AEC;
+	cmd.param_hdr.param_id = VOICE_PARAM_DELAYCALIBRATION;
+	cmd.param_hdr.param_size = sizeof(uint32_t);
+	cmd.param_hdr.reserved = 0;
+	printk(KERN_DEBUG "qvoice_get_optimal_delay");
+
+	v->cvp_state = CMD_STATUS_FAIL;
+	ret = apr_send_pkt(apr_cvp, (uint32_t *)&cmd);
+	if (ret < 0) {
+		pr_err("Fail: sending cvp get optimal delay");
+		goto fail;
+	}
+	ret = wait_event_timeout(v->cvp_wait,
+		(v->cvp_state == CMD_STATUS_SUCCESS),
+			msecs_to_jiffies(TIMEOUT_MS));
+	if (!ret) {
+		pr_err("%s: wait_event timeout\n", __func__);
+		goto fail;
+	}
+	return 0;
+fail:
+	return -EINVAL;
+}
+
+#endif // QVOICE
+
 static int voice_setup_vocproc(struct voice_data *v)
 {
 	struct cvp_create_full_ctl_session_cmd cvp_session_cmd;
@@ -2220,8 +3099,17 @@ static int voice_setup_vocproc(struct voice_data *v)
 			VSS_IVOCPROC_CMD_CREATE_FULL_CONTROL_SESSION;
 
 	/* Use default topology if invalid value in ACDB */
+
 	cvp_session_cmd.cvp_session.tx_topology_id =
 				get_voice_tx_topology();
+#if QVOICE
+	if (!qvoice_disabled()) {
+		cvp_session_cmd.cvp_session.tx_topology_id =
+					get_qvoice_tx_topology();
+	}
+	printk(KERN_DEBUG "voice_setup_vocproc: topology = %08x",
+		cvp_session_cmd.cvp_session.tx_topology_id);
+#endif
 	if (cvp_session_cmd.cvp_session.tx_topology_id == 0)
 		cvp_session_cmd.cvp_session.tx_topology_id =
 			VSS_IVOCPROC_TOPOLOGY_ID_TX_SM_ECNS;
@@ -3262,6 +4150,10 @@ int voc_enable_cvp(uint16_t session_id)
 			voice_send_cvp_register_cal_cmd(v);
 			voice_send_cvp_register_vol_cal_table_cmd(v);
 		}
+#if QVOICE
+		ret = qvoice_send_cal(v);
+#endif
+
 		ret = voice_send_enable_vocproc_cmd(v);
 		if (ret < 0) {
 			pr_err("%s: enable vocproc failed\n", __func__);
@@ -3741,6 +4633,11 @@ int voc_start_voice_call(uint16_t session_id)
 			pr_err("start voice failed\n");
 			goto fail;
 		}
+        
+#if QVOICE
+	ret = qvoice_send_cal(v);
+#endif
+
 		get_sidetone_cal(&sidetone_cal_data);
 		if (v->dev_tx.port_id != RT_PROXY_PORT_001_TX &&
 			v->dev_rx.port_id != RT_PROXY_PORT_001_RX) {
@@ -3845,6 +4742,10 @@ void voc_config_vocoder(uint32_t media_type,
 			  uint32_t network_type,
 			  uint32_t dtx_mode)
 {
+#if QVOICE
+	printk(KERN_DEBUG "voc_config_vocoder(media_type = 0x%x, rate = %d, network_type = 0x%x, dtx_mode = %x",
+		media_type, rate, network_type, dtx_mode);
+#endif
 	common.mvs_info.media_type = media_type;
 	common.mvs_info.rate = rate;
 	common.mvs_info.network_type = network_type;
@@ -3895,7 +4796,11 @@ static int32_t qdsp_mvm_callback(struct apr_client_data *data, void *priv)
 		if (data->payload_size) {
 			ptr = data->payload;
 
+#if PR_CMD_RESULT
+			pr_cmd_result(ptr);
+#else
 			pr_info("%x %x\n", ptr[0], ptr[1]);
+#endif
 			/* ping mvm service ACK */
 			switch (ptr[0]) {
 			case VSS_IMVM_CMD_CREATE_PASSIVE_CONTROL_SESSION:
@@ -3985,7 +4890,11 @@ static int32_t qdsp_cvs_callback(struct apr_client_data *data, void *priv)
 		if (data->payload_size) {
 			ptr = data->payload;
 
+#if PR_CMD_RESULT
+			pr_cmd_result(ptr);
+#else
 			pr_info("%x %x\n", ptr[0], ptr[1]);
+#endif
 			/*response from  CVS */
 			switch (ptr[0]) {
 			case VSS_ISTREAM_CMD_CREATE_PASSIVE_CONTROL_SESSION:
@@ -4136,7 +5045,11 @@ static int32_t qdsp_cvp_callback(struct apr_client_data *data, void *priv)
 		if (data->payload_size) {
 			ptr = data->payload;
 
+#if PR_CMD_RESULT
+			pr_cmd_result(ptr);
+#else
 			pr_info("%x %x\n", ptr[0], ptr[1]);
+#endif
 
 			switch (ptr[0]) {
 			case VSS_IVOCPROC_CMD_CREATE_FULL_CONTROL_SESSION:
@@ -4163,6 +5076,11 @@ static int32_t qdsp_cvp_callback(struct apr_client_data *data, void *priv)
 			case VSS_IVOCPROC_CMD_DEREGISTER_CALIBRATION_DATA:
 			case VSS_ICOMMON_CMD_MAP_MEMORY:
 			case VSS_ICOMMON_CMD_UNMAP_MEMORY:
+#if QVOICE
+			case VSS_ICOMMON_CMD_SET_UI_PROPERTY:
+			case VSS_ICOMMON_CMD_GET_UI_PROPERTY:
+			case VSS_ICOMMON_CMD_GET_PARAM:
+#endif
 			case VSS_IVOCPROC_CMD_SET_MUTE:
 				v->cvp_state = CMD_STATUS_SUCCESS;
 				wake_up(&v->cvp_wait);
@@ -4170,17 +5088,61 @@ static int32_t qdsp_cvp_callback(struct apr_client_data *data, void *priv)
 			case VOICE_CMD_SET_PARAM:
 				rtac_make_voice_callback(RTAC_CVP, ptr,
 							data->payload_size);
+#if QVOICE
+				v->cvp_state = CMD_STATUS_SUCCESS;
+				wake_up(&v->cvp_wait);
+#endif
 				break;
 			default:
+#if QVOICE
+				printk("%s: not match cmd = 0x%x\n", __func__, ptr[0]);
+#else
 				pr_debug("%s: not match cmd = 0x%x\n",
 					__func__, ptr[0]);
+#endif
 				break;
 			}
 		}
 	} else if (data->opcode ==  VOICE_EVT_GET_PARAM_ACK) {
+#if QVOICE
+		struct vss_icommon_rsp_get_optimal_delay_t* rsp_optimal_delay;
+		ptr = data->payload;
+
+		printk(KERN_DEBUG "VOICE_EVT_GET_PARAM_ACK, status = %d, payload_size = %d",
+			ptr[0], data->payload_size);
+		if (ptr[0]==0 && data->payload_size>=sizeof(struct vss_icommon_rsp_get_optimal_delay_t)) {
+			rsp_optimal_delay = (struct vss_icommon_rsp_get_optimal_delay_t*)ptr;
+			if (rsp_optimal_delay->param_hdr.module_id==VOICE_MODULE_AEC &&
+					rsp_optimal_delay->param_hdr.param_id==VOICE_PARAM_DELAYCALIBRATION) {
+				printk(KERN_DEBUG "*** QVoice optimal delay = %d", rsp_optimal_delay->optimal_delay);
+				v->cvp_state = CMD_STATUS_SUCCESS;
+				wake_up(&v->cvp_wait);
+			}
+			else {
+				printk(KERN_DEBUG "unknown RSP, module = %x, id = %x",
+					rsp_optimal_delay->param_hdr.module_id, rsp_optimal_delay->param_hdr.param_id);
+			}
+		}
+#endif
 		rtac_make_voice_callback(RTAC_CVP, data->payload,
 			data->payload_size);
 	}
+#if QVOICE
+	else if (data->opcode == APR_RSP_ACCEPTED) {
+		int index;
+		ptr = data->payload;
+		index = find(ptr[0], CmdTable, sizeof_array(CmdTable));
+		if (index>=0) {
+			printk(KERN_DEBUG "APR_RSP_ACCEPTED, payload size = %d, opcode = %s", data->payload_size, CmdStrings[index]);
+		}
+		else {
+			printk(KERN_DEBUG "APR_RSP_ACCEPTED, payload size = %d, opcode = %x", data->payload_size, ptr[0]);
+		}
+	}
+	else {
+		printk(KERN_DEBUG "cvp_callback opcode = %x", data->opcode);
+	}
+#endif
 	return 0;
 }
 

@@ -30,10 +30,44 @@
 #include <mach/socinfo.h>
 #include "msm-pcm-routing.h"
 #include "../codecs/wcd9310.h"
+#ifdef CONFIG_SKY_SND_AUTOANSWER
+#include <linux/mfd/wcd9xxx/wcd9310_registers.h>
+#endif /* CONFIG_SKY_SND_AUTOANSWER */
+
+#if defined(CONFIG_SKY_SND_EXTERNAL_AMP) //YDA165
+/* fixed below for build ef51 series ws10 board */
+#if ((defined(CONFIG_SKY_EF51S_BOARD) || defined(CONFIG_SKY_EF51K_BOARD) || defined(CONFIG_SKY_EF51L_BOARD)) && (CONFIG_BOARD_VER > CONFIG_WS10)) ||  \
+	defined(CONFIG_SKY_EF52S_BOARD) || defined(CONFIG_SKY_EF52K_BOARD) || defined(CONFIG_SKY_EF52L_BOARD) || defined(CONFIG_SKY_EF52W_BOARD)
+#include "pantech_snd_extamp_yda165.h"
+#else
+#include "sky_snd_fab2210.h"
+#endif
+#endif	/* CONFIG_SKY_SND_EXTERNAL_AMP */
 
 #ifdef CONFIG_SND_SOC_TPA2028D
 #include <sound/tpa2028d.h>
 #endif
+
+#if defined(CONFIG_SKY_EF52S_BOARD)
+#define FEATURE_PANTECH_SND_VOLTE_EQ
+#endif
+
+#if defined(CONFIG_PANTECH_SND_QSOUND) //YDA165
+#if defined(CONFIG_SKY_EF52S_BOARD) || defined(CONFIG_SKY_EF52K_BOARD) || defined(CONFIG_SKY_EF52L_BOARD) || defined(CONFIG_SKY_EF51S_BOARD) || defined(CONFIG_SKY_EF51K_BOARD) || defined(CONFIG_SKY_EF51L_BOARD) 
+#define QVOICE 1
+#else
+#define QVOICE 0
+#endif
+#else
+#define QVOICE 0
+#endif
+
+#if QVOICE
+// functions implemented in qdsp6/q6voice.c
+void voc_set_phone_mode(int phone_mode);
+int voc_get_phone_mode(void);
+#endif
+
 /* 8064 machine driver */
 #define PM8921_GPIO_BASE		NR_GPIO_IRQS
 #define PM8921_GPIO_PM_TO_SYS(pm_gpio)  (pm_gpio - 1 + PM8921_GPIO_BASE)
@@ -67,6 +101,13 @@
 
 #define JACK_DETECT_GPIO 38
 
+#ifdef CONFIG_SKY_SND_MBHC_GPIO
+#define PM8921_GPIO_BASE	NR_GPIO_IRQS
+#define PM8921_IRQ_BASE (NR_MSM_IRQS + NR_GPIO_IRQS)
+
+#define JACK_DETECT_INT PM8921_GPIO_IRQ(PM8921_IRQ_BASE, JACK_DETECT_GPIO)
+#endif /* CONFIG_SKY_SND_MBHC_GPIO */
+
 /* Shared channel numbers for Slimbus ports that connect APQ to MDM. */
 enum {
 	SLIM_1_RX_1 = 145, /* BT-SCO and USB TX */
@@ -86,11 +127,25 @@ enum {
 	INCALL_REC_STEREO,
 };
 
+#ifdef CONFIG_SKY_SND_YDA_ENABLE
 static u32 top_spk_pamp_gpio  = PM8921_GPIO_PM_TO_SYS(18);
 static u32 bottom_spk_pamp_gpio = PM8921_GPIO_PM_TO_SYS(19);
+#endif /* CONFIG_SKY_SND_YDA_ENABLE */
 static int msm_spk_control;
+#ifdef CONFIG_SKY_SND_YDA_ENABLE
 static int msm_ext_bottom_spk_pamp;
 static int msm_ext_top_spk_pamp;
+#endif /* CONFIG_SKY_SND_YDA_ENABLE */
+
+#ifdef CONFIG_SKY_SND_DOCKING_CRADLE  //20120810 jhsong : docking usb switch gpio
+static u32 docking_en_gpio  = PM8921_GPIO_PM_TO_SYS(33);
+static int docking_gpio_enabled = 0;
+#if defined(CONFIG_SKY_EF52S_BOARD) || defined(CONFIG_SKY_EF52K_BOARD) || defined(CONFIG_SKY_EF52L_BOARD) || defined(CONFIG_SKY_EF52W_BOARD) // 2012109 jmlee pm8921 docking amp gpio control add 
+static u32 docking_amp_en_gpio  = PM8921_GPIO_PM_TO_SYS(21);
+static int docking_amp_gpio_enabled = 0;
+#endif
+#endif
+
 static int msm_slim_0_rx_ch = 1;
 static int msm_slim_0_tx_ch = 1;
 static int msm_slim_3_rx_ch = 1;
@@ -124,6 +179,14 @@ module_param(apq8064_hs_detect_use_firmware, bool, 0444);
 MODULE_PARM_DESC(apq8064_hs_detect_use_firmware, "Use firmware for headset "
 		 "detection");
 
+#ifdef CONFIG_SKY_SND_MBHC_GPIO
+static bool hs_detect_use_gpio = true;
+#endif /* CONFIG_SKY_SND_MBHC_GPIO */
+
+#ifdef CONFIG_SKY_SND_AUTOANSWER
+static int autoans_flag_status = 0;
+#endif /* CONFIG_SKY_SND_AUTOANSWER */
+
 static int msm_enable_codec_ext_clk(struct snd_soc_codec *codec, int enable,
 				    bool dapm);
 
@@ -143,6 +206,7 @@ static struct tabla_mbhc_config mbhc_cfg = {
 
 static struct mutex cdc_mclk_mutex;
 
+#ifdef CONFIG_SKY_SND_YDA_ENABLE
 static void msm_enable_ext_spk_amp_gpio(u32 spk_amp_gpio)
 {
 	int ret = 0;
@@ -313,6 +377,7 @@ static void msm_ext_spk_power_amp_off(u32 spk)
 		return;
 	}
 }
+#endif /* CONFIG_SKY_SND_YDA_ENABLE */
 
 static void msm_ext_control(struct snd_soc_codec *codec)
 {
@@ -360,6 +425,330 @@ static int msm_set_spk(struct snd_kcontrol *kcontrol,
 	msm_ext_control(codec);
 	return 1;
 }
+
+#ifdef CONFIG_SKY_SND_DOCKING_CRADLE  //20120810 jhsong : docking usb switch gpio
+void docking_enable_gpio(int enable)
+{
+	struct pm_gpio param = {
+		.direction      = PM_GPIO_DIR_OUT,
+		.output_buffer  = PM_GPIO_OUT_BUF_CMOS,
+		.output_value   = 1,
+		.pull      = PM_GPIO_PULL_NO,
+		.vin_sel	= PM_GPIO_VIN_S4,
+		.out_strength   = PM_GPIO_STRENGTH_MED,
+		.
+		function       = PM_GPIO_FUNC_NORMAL,
+	};
+	int ret = 0;
+
+	pr_err("%s:...... gpio %u, enable : %d, docking_gpio_enabled : %d\n", __func__, docking_en_gpio, enable, docking_gpio_enabled);
+
+	if(enable){
+	   if(docking_gpio_enabled==0){
+		docking_gpio_enabled = 1;
+		ret = gpio_request(docking_en_gpio, "DOCKING_EN");
+		if (ret) {
+			pr_err("%s: Error requesting GPIO %d\n", __func__,
+				docking_en_gpio);
+			return;
+		}
+		ret = pm8xxx_gpio_config(docking_en_gpio, &param);
+		if (ret)
+			pr_err("%s: Failed to configure docking enable"
+				" gpio %u\n", __func__, docking_en_gpio);
+		else {
+			pr_debug("%s: enable Top spkr amp gpio\n", __func__);
+			gpio_direction_output(docking_en_gpio, enable);
+		}
+		usleep_range(4000, 4000);
+	   }
+	}else{
+		if(docking_gpio_enabled){
+			docking_gpio_enabled = 0;
+			gpio_direction_output(docking_en_gpio, enable);
+			gpio_free(docking_en_gpio);
+			usleep_range(4000, 4000);
+		}
+	}
+}
+#if defined(CONFIG_SKY_EF52S_BOARD) || defined(CONFIG_SKY_EF52K_BOARD) || defined(CONFIG_SKY_EF52L_BOARD) || defined(CONFIG_SKY_EF52W_BOARD) // 2012109 jmlee pm8921 docking amp gpio control add 
+static void docking_amp_enable_gpio(int enable)
+{
+	struct pm_gpio param = {
+		.direction      = PM_GPIO_DIR_OUT,
+		.output_buffer  = PM_GPIO_OUT_BUF_CMOS,
+		.output_value   = 1,
+		.pull      = PM_GPIO_PULL_NO,
+		.vin_sel	= PM_GPIO_VIN_S4,
+		.out_strength   = PM_GPIO_STRENGTH_MED,
+		.
+		function       = PM_GPIO_FUNC_NORMAL,
+	};
+	int ret = 0;
+
+	pr_debug("%s:...... gpio %u, enable : %d, docking_amp_gpio_enabled : %d\n", __func__, docking_amp_en_gpio, enable, docking_amp_gpio_enabled);
+
+	if(enable){
+	   if(docking_amp_gpio_enabled==0){
+		docking_amp_gpio_enabled = 1;
+		ret = gpio_request(docking_amp_en_gpio, "DOCKING_AMP_EN");
+		if (ret) {
+			pr_err("%s: Error requesting GPIO %d\n", __func__,
+				docking_amp_en_gpio);
+			return;
+		}
+		ret = pm8xxx_gpio_config(docking_amp_en_gpio, &param);
+		if (ret)
+			pr_err("%s: Failed to configure docking enable"
+				" gpio %u\n", __func__, docking_amp_en_gpio);
+		else {
+			pr_debug("%s: enable docking amp gpio\n", __func__);
+			gpio_direction_output(docking_amp_en_gpio, enable);
+		}
+		usleep_range(4000, 4000);
+	   }
+	}else{
+		if(docking_amp_gpio_enabled){
+			docking_amp_gpio_enabled = 0;
+			gpio_direction_output(docking_amp_en_gpio, enable);
+			gpio_free(docking_amp_en_gpio);
+			usleep_range(4000, 4000);
+		}
+	}
+}
+#endif
+#endif
+
+#ifdef CONFIG_SKY_SND_EXTERNAL_AMP
+#if (defined(CONFIG_SKY_EF52S_BOARD) || defined(CONFIG_SKY_EF52K_BOARD) || defined(CONFIG_SKY_EF52L_BOARD) || defined(CONFIG_SKY_EF52W_BOARD)) && (CONFIG_BOARD_VER < CONFIG_WS20)
+static int msm_spkramp_event(struct snd_soc_dapm_widget *w,
+	struct snd_kcontrol *k, int event)
+{
+	pr_debug("%s() %x\n", __func__, SND_SOC_DAPM_EVENT_ON(event));
+
+	if (SND_SOC_DAPM_EVENT_ON(event)==SND_SOC_DAPM_POST_PMU)
+	{
+		if ((!strncmp(w->name, "Ext Spk Bottom Pos", 18)) || (!strncmp(w->name, "Ext Spk Bottom Neg", 18))) {
+#ifdef CONFIG_SKY_SND_DOCKING_CRADLE
+				usleep_range(10000, 10000);
+//				docking_enable_gpio(1);			
+			docking_amp_enable_gpio(1);
+#endif			
+			}
+		else {
+				snd_extamp_api_SetDevice(1, SND_DEVICE_SPEAKER_RX);
+			}
+		}
+	else
+	{
+		if ((!strncmp(w->name, "Ext Spk Bottom Pos", 18)) || (!strncmp(w->name, "Ext Spk Bottom Neg", 18))) {
+#ifdef CONFIG_SKY_SND_DOCKING_CRADLE
+//			docking_enable_gpio(0);
+			docking_amp_enable_gpio(0);
+#endif
+		}
+		else {
+			snd_extamp_api_SetDevice(0, SND_DEVICE_SPEAKER_RX);
+		}
+	}
+
+	return 0;
+}
+/* fixed below for build ef51 series ws10 board */
+#elif (defined(CONFIG_SKY_EF52S_BOARD) || defined(CONFIG_SKY_EF52K_BOARD) || defined(CONFIG_SKY_EF52L_BOARD) || defined(CONFIG_SKY_EF52W_BOARD)) && (CONFIG_BOARD_VER > CONFIG_WS10)
+static int msm_spkramp_event(struct snd_soc_dapm_widget *w,
+	struct snd_kcontrol *k, int event)
+{
+	pr_debug("%s() %x\n", __func__, SND_SOC_DAPM_EVENT_ON(event));
+
+	if (SND_SOC_DAPM_EVENT_ON(event)==SND_SOC_DAPM_POST_PMU)
+	{
+		if ((!strncmp(w->name, "Ext Spk Bottom Pos", 18)) || (!strncmp(w->name, "Ext Spk Bottom Neg", 18))) {
+			;
+		}
+		else {
+#ifdef CONFIG_SKY_SND_DOCKING_CRADLE
+			if ( snd_get_docking_mode() == 1 ) {   // docking mode on
+				if ( snd_get_dual_path() == 1 ) { 
+//					docking_enable_gpio(1);   
+					docking_amp_enable_gpio(1);
+				}
+				else if ( wcd9310_headsetJackStatusGet() != 0 ) {
+//					docking_enable_gpio(0);
+					docking_amp_enable_gpio(0);
+			}
+				else {
+					pr_err("Docking Speaker On\n");
+		  			snd_extamp_api_SetDevice(1,  SND_DEVICE_DOCK_SPEAKER_RX);
+
+					docking_amp_enable_gpio(1);
+
+//					if ( docking_gpio_enabled == 0 ) {
+//						docking_enable_gpio(1); 
+//					}
+				}
+			} else 
+#endif
+			{ // speaker mode on
+#ifdef CONFIG_SKY_SND_DOCKING_CRADLE
+//				if ( docking_gpio_enabled == 1 ) {
+//					docking_enable_gpio(0);  
+//				}
+					docking_amp_enable_gpio(0);
+#endif				
+//20130413 hdj delay 30ms to avoid receiver to speaker switching noise during RMS mp3 playback 			
+                usleep_range(30000, 30000);
+                pr_err("Internal Speaker On delay 30ms\n");                
+                snd_extamp_api_SetDevice(1, SND_DEVICE_SPEAKER_RX);
+
+			}
+		}
+	}
+	else  // off block
+	{
+		if ((!strncmp(w->name, "Ext Spk Bottom Pos", 18)) || (!strncmp(w->name, "Ext Spk Bottom Neg", 18))) {
+			;
+		}
+		else {
+#ifdef CONFIG_SKY_SND_DOCKING_CRADLE
+			if ( snd_get_docking_mode() == 1 ) {  // docking mode off
+				if ( snd_get_dual_path() == 1 ) {
+					docking_amp_enable_gpio(0);
+//					docking_enable_gpio(0);  
+				}
+				else if ( wcd9310_headsetJackStatusGet() != 0 ) {
+					docking_amp_enable_gpio(0);
+//					docking_enable_gpio(0);
+			}
+				else {
+				       docking_amp_enable_gpio(0);
+//					if ( docking_gpio_enabled == 0 ) {
+//						docking_enable_gpio(1);
+//					}
+					pr_err("Docking Speaker Off\n");
+					snd_extamp_api_SetDevice(0,  SND_DEVICE_DOCK_SPEAKER_RX);
+					usleep_range(4000, 4000);  //20130102 jhsong : prevent spk tick noise when spk off
+				}
+			} else
+#endif			
+			{  // speaker mode off
+#ifdef CONFIG_SKY_SND_DOCKING_CRADLE
+//				if ( docking_gpio_enabled == 1 ) {
+//					docking_enable_gpio(0);  
+//				}
+				docking_amp_enable_gpio(0);
+#endif				
+				pr_err("Internal Speaker Off\n");
+				snd_extamp_api_SetDevice(0,  SND_DEVICE_SPEAKER_RX);
+				usleep_range(4000, 4000);  //20130102 jhsong : prevent spk tick noise when spk off
+			}
+		}
+	}
+
+	return 0;
+}
+#elif ((defined(CONFIG_SKY_EF51S_BOARD) || defined(CONFIG_SKY_EF51K_BOARD) || defined(CONFIG_SKY_EF51L_BOARD)) && (CONFIG_BOARD_VER > CONFIG_WS10)) 
+static int msm_spkramp_event(struct snd_soc_dapm_widget *w,
+	struct snd_kcontrol *k, int event)
+			{
+	pr_debug("%s() %x\n", __func__, SND_SOC_DAPM_EVENT_ON(event));
+
+	if (SND_SOC_DAPM_EVENT_ON(event)==SND_SOC_DAPM_POST_PMU)
+	{
+		if ((!strncmp(w->name, "Ext Spk Bottom Pos", 18)) || (!strncmp(w->name, "Ext Spk Bottom Neg", 18))) {
+			pr_err("@#@#msm_spkramp_event......line 1/3 cb .....it should not call in EF51 device !!!!!!\n");
+		}
+		else {
+#ifdef CONFIG_SKY_SND_DOCKING_CRADLE
+			if ( snd_get_docking_mode() == 1 ) {
+				pr_err("Docking Speaker On\n");
+	  			snd_extamp_api_SetDevice(1, SND_DEVICE_DOCK_SPEAKER_RX);
+				usleep_range(4000, 4000);
+			} else 
+#endif
+			{		
+				pr_err("Internal Speaker On\n");
+				snd_extamp_api_SetDevice(1, SND_DEVICE_SPEAKER_RX);
+				}
+		}
+	}
+	else
+	{
+		if ((!strncmp(w->name, "Ext Spk Bottom Pos", 18)) || (!strncmp(w->name, "Ext Spk Bottom Neg", 18))) {
+			pr_err("@#@#msm_spkramp_event......line 1/3 cb .....it should not call in EF51 device !!!!!!\n");
+		}
+		else {
+#ifdef CONFIG_SKY_SND_DOCKING_CRADLE
+			if ( snd_get_docking_mode() == 1 ) {
+				pr_err("Docking Speaker Off\n");
+				snd_extamp_api_SetDevice(0, SND_DEVICE_DOCK_SPEAKER_RX);
+				usleep_range(4000, 4000);
+			} else
+#endif				
+			{
+				pr_err("Internal Speaker Off\n");
+				snd_extamp_api_SetDevice(0, SND_DEVICE_SPEAKER_RX);
+				usleep_range(4000, 4000);  //20130102 jhsong : prevent spk tick noise when spk off
+			}
+		}
+	}
+
+	return 0;
+}
+/* fixed below for build ef51 series ws10 board */
+#elif (defined(CONFIG_SKY_EF48S_BOARD) || defined(CONFIG_SKY_EF49K_BOARD) || defined(CONFIG_SKY_EF50L_BOARD)) || \
+	((defined(CONFIG_SKY_EF51S_BOARD) || defined(CONFIG_SKY_EF51K_BOARD) || defined(CONFIG_SKY_EF51L_BOARD)) && (CONFIG_BOARD_VER < CONFIG_WS20)) 
+static int msm_spkramp_event(struct snd_soc_dapm_widget *w,
+	struct snd_kcontrol *k, int event)
+{
+	pr_debug("%s() %x\n", __func__, SND_SOC_DAPM_EVENT_ON(event));
+
+	if (SND_SOC_DAPM_EVENT_ON(event)==SND_SOC_DAPM_POST_PMU)
+	{
+		if ((!strncmp(w->name, "Ext Spk Bottom Pos", 18)) || (!strncmp(w->name, "Ext Spk Bottom Neg", 18))){
+#ifdef CONFIG_SKY_SND_DOCKING_CRADLE  //20120810 jhsong : docking usb switch gpio
+//			docking_enable_gpio(1);
+#endif
+		}
+	else
+	{		
+		if (snd_subsystem_sp_poweron() < 0)
+		{
+			pr_err("[Jimmy] spkamp_event SPK ON fail...\n");
+			return -EINVAL;
+		}
+		pr_err("%s(): FAB2210 SPK AMP On!!\n", __func__);
+
+#ifdef CONFIG_SKY_SND_YDA_ENABLE
+		msm_ext_spk_power_amp_on(TOP_SPK_AMP_POS|TOP_SPK_AMP_NEG);
+#endif
+	}
+	}
+	else
+	{
+		if ((!strncmp(w->name, "Ext Spk Bottom Pos", 18)) || (!strncmp(w->name, "Ext Spk Bottom Neg", 18))){
+#ifdef CONFIG_SKY_SND_DOCKING_CRADLE  //20120810 jhsong : docking usb switch gpio
+//			docking_enable_gpio(0);
+#endif
+		}
+		else {		
+			if (snd_subsystem_standby(SYSTEM_OFF) < 0)
+			{
+				pr_err("[Jimmy] spkamp_event SPK OFF fail...\n");
+				return -EINVAL;
+			}
+		pr_err("%s(): FAB2210 SPK AMP Off!!\n", __func__);
+
+#ifdef CONFIG_SKY_SND_YDA_ENABLE
+		msm_ext_spk_power_amp_off(TOP_SPK_AMP_POS|TOP_SPK_AMP_NEG);
+#endif
+		}
+	}
+
+	return 0;
+}
+#endif	
+#else
 static int msm_spkramp_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *k, int event)
 {
@@ -401,6 +790,7 @@ static int msm_spkramp_event(struct snd_soc_dapm_widget *w,
 	}
 	return 0;
 }
+#endif	/* CONFIG_SKY_SND_EXTERNAL_AMP */
 
 static int msm_enable_codec_ext_clk(struct snd_soc_codec *codec, int enable,
 				    bool dapm)
@@ -500,6 +890,9 @@ static const struct snd_soc_dapm_widget apq8064_dapm_widgets[] = {
 	SND_SOC_DAPM_SPK("Ext Spk Top Pos", msm_spkramp_event),
 	SND_SOC_DAPM_SPK("Ext Spk Top Neg", msm_spkramp_event),
 	SND_SOC_DAPM_SPK("Ext Spk Top", msm_spkramp_event),
+#ifdef CONFIG_SKY_SND_EXTERNAL_AMP
+	SND_SOC_DAPM_MIC("Handset Mic", NULL),
+#endif
 
 	/************ Analog MICs ************/
 	/**
@@ -508,9 +901,13 @@ static const struct snd_soc_dapm_widget apq8064_dapm_widgets[] = {
 	 */
 	SND_SOC_DAPM_MIC("Analog mic7", NULL),
 
+#ifdef CONFIG_SKY_SND_EXTERNAL_AMP
+	SND_SOC_DAPM_MIC("Handset Mic", NULL),
+#endif
 	SND_SOC_DAPM_MIC("Headset Mic", NULL),
 	SND_SOC_DAPM_MIC("ANCRight Headset Mic", NULL),
 	SND_SOC_DAPM_MIC("ANCLeft Headset Mic", NULL),
+
 
 #ifdef CONFIG_SND_SOC_DUAL_AMIC
 	SND_SOC_DAPM_MIC("Handset Mic", NULL),
@@ -559,11 +956,32 @@ static const struct snd_soc_dapm_route apq8064_common_audio_map[] = {
 
 #ifndef CONFIG_SND_SOC_DUAL_AMIC
 	/* Headset ANC microphones */
+#ifdef CONFIG_SKY_SND_EXTERNAL_AMP
+	{"AMIC3", NULL, "MIC BIAS3 External"},
+	{"MIC BIAS3 External", NULL, "Handset Mic"},
+#else
 	{"AMIC3", NULL, "MIC BIAS3 Internal1"},
 	{"MIC BIAS3 Internal1", NULL, "ANCRight Headset Mic"},
+#endif /* CONFIG_SKY_SND_EXTERNAL_AMP */
 
+#if 1
+	{"AMIC4", NULL, "MIC BIAS4 External"},
+	{"MIC BIAS4 External", NULL, "Handset Mic"},
+	
+	{"AMIC5", NULL, "MIC BIAS4 External"},
+	{"MIC BIAS4 External", NULL, "Handset Mic"},
+
+#if defined(CONFIG_SKY_EF51S_BOARD) || defined(CONFIG_SKY_EF51K_BOARD) || defined(CONFIG_SKY_EF51L_BOARD) 
+	{"AMIC6", NULL, "MIC BIAS4 External"},
+	{"MIC BIAS4 External", NULL, "Handset Mic"},
+#else
+	{"AMIC6", NULL, "MIC BIAS1 External"},
+	{"MIC BIAS1 External", NULL, "Handset Mic"},
+#endif
+#else
 	{"AMIC4", NULL, "MIC BIAS1 Internal2"},
 	{"MIC BIAS1 Internal2", NULL, "ANCLeft Headset Mic"},
+#endif
 #endif
 };
 
@@ -686,6 +1104,19 @@ static const char *slim0_tx_ch_text[] = {"One", "Two", "Three", "Four"};
 static const char *hdmi_rx_ch_text[] = {"Two", "Three", "Four", "Five",
 	"Six", "Seven", "Eight"};
 static const char * const hdmi_rate[] = {"Default", "Variable"};
+#if QVOICE
+#ifdef FEATURE_PANTECH_SND_VOLTE_EQ
+static const char *phone_mode[] = {"Handset", "Speakerphone", "Headset", "BT", "VT", "Handset Soft", "Handset Clean"}; //VOLTE_EQ add 2param for Volte EQ 
+#else
+static const char *phone_mode[] = {"Handset", "Speakerphone", "Headset", "BT", "VT"};
+#endif
+#endif
+//HDJ_LS4_Sound_20120503
+static const char *headset_status_function[] = {"Get"};
+//HDJ_LS4_Sound_20120503_END
+#ifdef CONFIG_SKY_SND_AUTOANSWER
+static const char *autoans_flag_function[] = {"Off", "On", "changeOn", "changeOff"}; //20140717 hdj occur distortion sound if switch device to speaker from headset during volte call. // add change flag
+#endif /* CONFIG_SKY_SND_AUTOANSWER */
 
 static const struct soc_enum msm_enum[] = {
 	SOC_ENUM_SINGLE_EXT(2, spk_function),
@@ -693,7 +1124,23 @@ static const struct soc_enum msm_enum[] = {
 	SOC_ENUM_SINGLE_EXT(4, slim0_tx_ch_text),
 	SOC_ENUM_SINGLE_EXT(7, hdmi_rx_ch_text),
 	SOC_ENUM_SINGLE_EXT(2, hdmi_rate),
+//HDJ_LS4_Sound_20120503	
+	SOC_ENUM_SINGLE_EXT(1, headset_status_function),
+//HDJ_LS4_Sound_20120503_END
+#if QVOICE
+#ifdef FEATURE_PANTECH_SND_VOLTE_EQ
+	SOC_ENUM_SINGLE_EXT(7, phone_mode), //VOLTE_EQ add 2param for Volte EQ 
+#else
+	SOC_ENUM_SINGLE_EXT(5, phone_mode),
+#endif
+#endif
 };
+
+#ifdef CONFIG_SKY_SND_AUTOANSWER //20140717 hdj occur distortion sound if switch device to speaker from headset during volte call. //add change flag
+static const struct soc_enum audoans_msm_enum[] = {
+	SOC_ENUM_SINGLE_EXT(4, autoans_flag_function),
+};
+#endif /* CONFIG_SKY_SND_AUTOANSWER */
 
 static const char * const slim1_rate_text[] = {"8000", "16000", "48000"};
 static const struct soc_enum msm_slim_1_rate_enum[] = {
@@ -864,6 +1311,87 @@ static int msm_hdmi_rate_get(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
+//HDJ_LS4_Sound_20120503
+static int headset_status_get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
+{
+	ucontrol->value.integer.value[0] = wcd9310_headsetJackStatusGet();
+	return 0;
+}
+
+static int headset_status_set(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
+{
+	pr_info("%s() %s\n", __func__, "This behaviour is not implemented");
+	return 0;
+}
+//HDJ_LS4_Sound_20120503_END
+
+#ifdef CONFIG_SKY_SND_AUTOANSWER
+static int autoans_flag_get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
+{
+	pr_info("%s: value = %d\n", __func__, autoans_flag_status);
+	ucontrol->value.integer.value[0] = autoans_flag_status;
+	return 0;
+}
+int switching_count = 100; //20140717 hdj occur distortion sound if switch device to speaker from headset during volte call.
+static int autoans_flag_set(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+
+	pr_err("%s: value = %ld\n", __func__, ucontrol->value.integer.value[0]);
+
+	if(ucontrol->value.integer.value[0] == 1)
+	{
+		if(!autoans_flag_status)
+		{
+			autoans_flag_status = ucontrol->value.integer.value[0];
+			snd_soc_write(codec, TABLA_A_CDC_RX1_VOL_CTL_B2_CTL, 0xAC);
+			snd_soc_write(codec, TABLA_A_CDC_RX2_VOL_CTL_B2_CTL, 0xAC);
+		}
+	}
+    else if(ucontrol->value.integer.value[0] == 2) //20140717 hdj occur distortion sound if switch device to speaker from headset during volte call.
+    {
+        switching_count = 0;
+        //pr_err("%s: value = %ld  change on \n", __func__, ucontrol->value.integer.value[0]);
+    }
+        else if(ucontrol->value.integer.value[0] == 3) //20140717 hdj occur distortion sound if switch device to speaker from headset during volte call.
+    {
+        switching_count = 100;
+        //pr_err("%s: value = %ld  change off\n", __func__, ucontrol->value.integer.value[0]);
+    }
+	else
+	{
+		if(autoans_flag_status)
+		{
+			autoans_flag_status = ucontrol->value.integer.value[0];
+			snd_soc_write(codec, TABLA_A_CDC_RX1_VOL_CTL_B2_CTL, 0x0);
+			snd_soc_write(codec, TABLA_A_CDC_RX2_VOL_CTL_B2_CTL, 0x0);
+		}
+	}
+
+	return 0;
+}
+#endif /* CONFIG_SKY_SND_AUTOANSWER */
+
+#if QVOICE
+static int msm8960_phone_mode_get(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	int phone_mode = voc_get_phone_mode();
+	ucontrol->value.integer.value[0] = phone_mode;
+	printk(KERN_DEBUG "*** phone mode get %d", phone_mode);
+	return 0;
+}
+
+static int msm8960_phone_mode_put(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	int phone_mode = ucontrol->value.integer.value[0];
+	voc_set_phone_mode(phone_mode);
+	printk(KERN_DEBUG "*** phone mode put %d", phone_mode);
+	return 0;
+}
+#endif
+
 static const struct snd_kcontrol_new tabla_msm_controls[] = {
 	SOC_ENUM_EXT("Speaker Function", msm_enum[0], msm_get_spk,
 		msm_set_spk),
@@ -881,10 +1409,38 @@ static const struct snd_kcontrol_new tabla_msm_controls[] = {
 		msm_slim_3_rx_ch_get, msm_slim_3_rx_ch_put),
 	SOC_ENUM_EXT("HDMI_RX Channels", msm_enum[3],
 		msm_hdmi_rx_ch_get, msm_hdmi_rx_ch_put),
+
 	SOC_ENUM_EXT("HDMI RX Rate", msm_enum[4],
 					msm_hdmi_rate_get,
 					msm_hdmi_rate_put),
+//HDJ_LS4_Sound_20120503
+	//20140522 frogLove_KK : change from 3 to 5 on KK
+	SOC_ENUM_EXT("Headset Status", msm_enum[5], headset_status_get,
+		headset_status_set),
+//HDJ_LS4_Sound_20120503_END
+
+// jmlee SR case no 01033370 BT WB call mute issue
+//	SOC_ENUM_EXT("Internal BTSCO SampleRate", msm_btsco_enum[0], 
+//	msm_btsco_rate_get, msm_btsco_rate_put), 
+
+#if 1 // jmlee test kk //frogLove_KK_later - for wideband BT
+	SOC_ENUM_EXT("Internal BTSCO SampleRate", msm_slim_1_rate_enum[0],
+		      msm_slim_1_rate_get, msm_slim_1_rate_put),
+#endif
+
+#if QVOICE
+       //20140522 frogLove_KK : change from 4 to 6 on KK
+       SOC_ENUM_EXT("Phone Mode", msm_enum[6],
+		msm8960_phone_mode_get, msm8960_phone_mode_put),
+#endif 
 };
+
+#ifdef CONFIG_SKY_SND_AUTOANSWER
+static const struct snd_kcontrol_new tabla_audoans_msm_controls[] = {
+	SOC_ENUM_EXT("Autoans Flag", audoans_msm_enum[0], autoans_flag_get,
+		autoans_flag_set),
+};
+#endif /* CONFIG_SKY_SND_AUTOANSWER */		
 
 static void *def_tabla_mbhc_cal(void)
 {
@@ -916,8 +1472,15 @@ static void *def_tabla_mbhc_cal(void)
 	S(t_ins_retry, 200);
 #undef S
 #define S(X, Y) ((TABLA_MBHC_CAL_PLUG_TYPE_PTR(tabla_cal)->X) = (Y))
+#ifdef CONFIG_SKY_SND_MICB2_2700
+	//S(v_no_mic, 400);	// Qualcomm latest patch(MSM8960)
+	//S(v_hs_max, 2550);	// H/W tuning value for 2.7V Mic bias
+	S(v_no_mic, 30);
+	S(v_hs_max, 2900);	// H/W tuning value for 2.7V Mic bias
+#else
 	S(v_no_mic, 30);
 	S(v_hs_max, 2400);
+#endif
 #undef S
 #define S(X, Y) ((TABLA_MBHC_CAL_BTN_DET_PTR(tabla_cal)->X) = (Y))
 	S(c[0], 62);
@@ -934,6 +1497,43 @@ static void *def_tabla_mbhc_cal(void)
 	btn_cfg = TABLA_MBHC_CAL_BTN_DET_PTR(tabla_cal);
 	btn_low = tabla_mbhc_cal_btn_det_mp(btn_cfg, TABLA_BTN_DET_V_BTN_LOW);
 	btn_high = tabla_mbhc_cal_btn_det_mp(btn_cfg, TABLA_BTN_DET_V_BTN_HIGH);
+#ifdef CONFIG_SKY_SND_MICB2_2700
+#if ( defined(CONFIG_SKY_EF48S_BOARD) || defined(CONFIG_SKY_EF49K_BOARD) || defined(CONFIG_SKY_EF50L_BOARD) )
+	btn_low[0] = -50;
+	btn_high[0] = 180;	// increase headset button detect range 140 -> 180, referenced EF44S
+	btn_low[1] = 190;
+	btn_high[1] = 250;
+	btn_low[2] = 190;
+	btn_high[2] = 250;
+	btn_low[3] = 190;
+	btn_high[3] = 250;
+	btn_low[4] = 190;
+	btn_high[4] = 250;
+	btn_low[5] = 190;
+	btn_high[5] = 250;
+	btn_low[6] = 190;
+	btn_high[6] = 250;
+	btn_low[7] = 190;
+	btn_high[7] = 250;
+#else
+	btn_low[0] = -50;
+	btn_high[0] = 180;
+	btn_low[1] = 181;
+	btn_high[1] = 320;
+	btn_low[2] = 370;
+	btn_high[2] = 520;
+	btn_low[3] = 530;
+	btn_high[3] = 530;
+	btn_low[4] = 530;
+	btn_high[4] = 530;
+	btn_low[5] = 530;
+	btn_high[5] = 530;
+	btn_low[6] = 530;
+	btn_high[6] = 530;
+	btn_low[7] = 530;
+	btn_high[7] = 530;
+#endif	
+#else
 	btn_low[0] = -50;
 	btn_high[0] = 10;
 	btn_low[1] = 11;
@@ -950,6 +1550,7 @@ static void *def_tabla_mbhc_cal(void)
 	btn_high[6] = 244;
 	btn_low[7] = 245;
 	btn_high[7] = 330;
+#endif
 	n_ready = tabla_mbhc_cal_btn_det_mp(btn_cfg, TABLA_BTN_DET_N_READY);
 	n_ready[0] = 80;
 	n_ready[1] = 68;
@@ -1246,6 +1847,16 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	struct snd_soc_codec *codec = rtd->codec;
 	struct snd_soc_dapm_context *dapm = &codec->dapm;
 	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
+#ifdef CONFIG_SKY_SND_MBHC_GPIO
+	struct pm_gpio jack_gpio_cfg = {
+		.direction = PM_GPIO_DIR_IN,
+		//.pull = PM_GPIO_PULL_UP_1P5,
+		.pull = PM_GPIO_PULL_NO,  // jmlee change
+		.function = PM_GPIO_FUNC_NORMAL,
+		.vin_sel = 2,
+		.inv_int_pol = 0,
+	};
+#endif /* CONFIG_SKY_SND_MBHC_GPIO */
 
 	pr_debug("%s(), dev_name%s\n", __func__, dev_name(cpu_dai->dev));
 
@@ -1253,6 +1864,11 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 		top_spk_pamp_gpio = (PM8921_GPIO_PM_TO_SYS(19));
 		bottom_spk_pamp_gpio = (PM8921_GPIO_PM_TO_SYS(18));
 	}*/
+
+#ifdef CONFIG_SKY_SND_AUTOANSWER
+	snd_soc_add_codec_controls(codec, tabla_audoans_msm_controls,
+				ARRAY_SIZE(tabla_audoans_msm_controls));
+#endif
 
 	snd_soc_dapm_new_controls(dapm, apq8064_dapm_widgets,
 				ARRAY_SIZE(apq8064_dapm_widgets));
@@ -1296,6 +1912,7 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 		return err;
 	}
 
+
 	ret = snd_jack_set_key(button_jack.jack,
 			       SND_JACK_BTN_0,
 			       KEY_MEDIA);
@@ -1304,7 +1921,43 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 		return ret;
 	}
 
+#ifdef CONFIG_SKY_SND_MBHC_GPIO  //20140106 jhsong : headset volume key
+	ret = snd_jack_set_key(button_jack.jack,
+			       SND_JACK_BTN_1,
+			       KEY_VOLUMEUP);
+	if (ret) {
+		pr_err("[SND] %s: Failed to set code for btn-1\n",
+			__func__);
+		return ret;
+	}
+
+	ret = snd_jack_set_key(button_jack.jack,
+			       SND_JACK_BTN_2,
+			       KEY_VOLUMEDOWN);
+	if (ret) {
+		pr_err("[SND] %s: Failed to set code for btn-2\n",
+			__func__);
+		return ret;
+	}
+#endif
+
 	codec_clk = clk_get(cpu_dai->dev, "osr_clk");
+
+#ifdef CONFIG_SKY_SND_MBHC_GPIO
+	if (hs_detect_use_gpio) {
+		mbhc_cfg.gpio = PM8921_GPIO_PM_TO_SYS(JACK_DETECT_GPIO);
+		mbhc_cfg.gpio_irq = JACK_DETECT_INT;
+	}
+
+	if (mbhc_cfg.gpio) {
+		err = pm8xxx_gpio_config(mbhc_cfg.gpio, &jack_gpio_cfg);
+		if (err) {
+			pr_err("%s: pm8xxx_gpio_config failed %d\n", __func__,
+			       err);
+			return err;
+		}
+	}
+#endif /* CONFIG_SKY_SND_MBHC_GPIO */
 
 #ifndef CONFIG_SWITCH_FSA8008
 	/* APQ8064 Rev 1.1 CDP and Liquid have mechanical switch */
@@ -1332,7 +1985,9 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 			 "detected\n", __func__);
 		apq8064_hs_detect_use_gpio = 1;
 	}
-
+#ifdef CONFIG_SKY_SND_MBHC_GPIO
+           apq8064_hs_detect_use_gpio = -1; // jmlee Pantech use pmic gpio 38 ,  no msm gpio 38
+#endif
 	if (apq8064_hs_detect_use_gpio == 1) {
 		pr_debug("%s: Using MBHC mechanical switch\n", __func__);
 		mbhc_cfg.gpio = JACK_DETECT_GPIO;
@@ -2240,6 +2895,67 @@ static struct snd_soc_card snd_soc_card_msm = {
 
 static struct platform_device *msm_snd_device;
 
+#if defined(CONFIG_SKY_SND_EXTERNAL_AMP) //YDA165
+#if ( ( defined(CONFIG_SKY_EF51S_BOARD) || defined(CONFIG_SKY_EF51K_BOARD) || defined(CONFIG_SKY_EF51L_BOARD) ) && (CONFIG_BOARD_VER > CONFIG_WS10) ) || \
+	defined(CONFIG_SKY_EF52S_BOARD) || defined(CONFIG_SKY_EF52K_BOARD) || defined(CONFIG_SKY_EF52L_BOARD) || defined(CONFIG_SKY_EF52W_BOARD)
+
+#define GPIO_PIN_SUBSYSTEM_SCL	70
+#define GPIO_PIN_SUBSYSTEM_SDA	71
+
+static uint32_t yda165_gpio_table[] = {
+	GPIO_CFG(GPIO_PIN_SUBSYSTEM_SCL, 0, GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL/*GPIO_CFG_PULL_UP*/, GPIO_CFG_2MA),
+	GPIO_CFG(GPIO_PIN_SUBSYSTEM_SDA, 0, GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL/*GPIO_CFG_PULL_UP*/, GPIO_CFG_2MA),
+};
+
+static int snd_extamp_yda165_gpio_Init(void)
+{
+	int ret = 0;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(yda165_gpio_table); ++i)
+	{
+		 ret= gpio_tlmm_config(yda165_gpio_table[i], GPIO_CFG_ENABLE);
+		 if ( ret ) {
+			  pr_err( "%s: Failed yda165_gpio_table i2c gpio_tlmm_config(%d)=%d\r\n", __func__, i, ret);
+			  return -1;
+		 }
+	}
+
+	return ret;
+}
+#else
+#define I2C_SCL_FAB2210      70  
+#define I2C_SDA_FAB2210     71  
+
+static uint32_t fab2210_gpio_table[] = {
+	/* I2C_SCL 20120817 jhsong : hw/qct recomment no pull*/
+    GPIO_CFG(I2C_SCL_FAB2210, 0, GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL/*GPIO_CFG_PULL_UP*/, GPIO_CFG_2MA),
+	/* I2C_SDA 20120817 jhsong : hw/qct recomment no pull*/
+   GPIO_CFG(I2C_SDA_FAB2210, 0, GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL/*GPIO_CFG_PULL_UP*/, GPIO_CFG_2MA),
+};
+
+static int snd_subsystem_GPIO_Init(void)
+{
+	int ret = 0;
+      int i;
+	for (i = 0; i < ARRAY_SIZE(fab2210_gpio_table); ++i)
+	{
+		 ret= gpio_tlmm_config(fab2210_gpio_table[i], GPIO_CFG_ENABLE);
+		 if ( ret ) {
+			  pr_err( "%s: Failed fab2210_gpio_table i2c gpio_tlmm_config(%d)=%d\r\n", __func__, i, ret);
+			  return -1;
+		 }
+	}
+
+#ifdef CONFIG_FAB2210_DEBUG_PRINTK
+	pr_err("[FAB2210] snd_subsystem_GPIO_Init() \n");
+#endif /* CONFIG_FAB2210_DEBUG_PRINTK */
+
+	return ret;
+}
+#endif
+#endif /* CONFIG_SKY_SND_EXTERNAL_AMP */
+
 static int __init msm_audio_init(void)
 {
 	int ret;
@@ -2252,8 +2968,10 @@ static int __init msm_audio_init(void)
 		return -ENODEV;
 	}
 
+#ifdef CONFIG_SKY_SND_YDA_ENABLE
 	if (socinfo_get_pmic_model() == PMIC_MODEL_PM8917)
 		bottom_spk_pamp_gpio = PM8921_GPIO_PM_TO_SYS(16);
+#endif
 
 	mbhc_cfg.calibration = def_tabla_mbhc_cal();
 	if (!mbhc_cfg.calibration) {
@@ -2275,6 +2993,17 @@ static int __init msm_audio_init(void)
 		kfree(mbhc_cfg.calibration);
 		return ret;
 	}
+
+#if defined(CONFIG_SKY_SND_EXTERNAL_AMP) //YDA165
+#if ( ( defined(CONFIG_SKY_EF51S_BOARD) || defined(CONFIG_SKY_EF51K_BOARD) || defined(CONFIG_SKY_EF51L_BOARD) ) && (CONFIG_BOARD_VER > CONFIG_WS10) ) || \
+	defined(CONFIG_SKY_EF52S_BOARD) || defined(CONFIG_SKY_EF52K_BOARD) || defined(CONFIG_SKY_EF52L_BOARD) || defined(CONFIG_SKY_EF52W_BOARD)
+	snd_extamp_yda165_gpio_Init();
+	snd_extamp_api_Init();
+#else
+	snd_subsystem_GPIO_Init();
+	snd_subsystem_Init();
+#endif	
+#endif	/* CONFIG_SKY_SND_EXTERNAL_AMP*/
 
 	mutex_init(&cdc_mclk_mutex);
 	atomic_set(&auxpcm_rsc_ref, 0);

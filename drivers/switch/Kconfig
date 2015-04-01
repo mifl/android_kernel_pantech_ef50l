@@ -17,4 +17,12 @@ config SWITCH_FSA8008
 	help
 	 Say Y here to enable FSA8008 driver
 
+config SWITCH_SKY
+	tristate "SKY SWITCH DRIVER"
+	depends on GENERIC_GPIO
+	default n
+	help
+	  Say Y here if you have a SKY_SWITCH o enable
+	  support for the built-in SKY_SWITCH.
+
 endif # SWITCH

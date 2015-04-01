@@ -162,6 +162,10 @@ enum msm_camera_v4l2_subdev_notify {
 	NOTIFY_VFE_CAMIF_ERROR,
 	NOTIFY_VFE_PIX_SOF_COUNT, /*arg = int*/
 	NOTIFY_AXI_RDI_SOF_COUNT, /*arg = struct rdi_count_msg*/
+#if 1 //#ifdef F_PANTECH_CAMERA_QPATCH_JPEG_ZSL
+	NOTIFY_ISPIF_STREAM, /* arg = enable parameter for s_stream */
+	NOTIFY_VPE_MSG_EVT,
+#endif
 	NOTIFY_PCLK_CHANGE, /* arg = pclk */
 	NOTIFY_VFE_IRQ,
 	NOTIFY_AXI_IRQ,

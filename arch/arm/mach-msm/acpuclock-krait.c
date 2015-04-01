@@ -35,6 +35,12 @@
 #include <mach/msm_bus.h>
 #include <mach/msm_dcvs.h>
 
+#if defined(CONFIG_PANTECH_DEBUG)
+#if defined(CONFIG_PANTECH_DEBUG_DCVS_LOG) //p14291_121102
+#include <mach/pantech_debug.h>
+#endif
+#endif
+
 #include "acpuclock.h"
 #include "acpuclock-krait.h"
 #include "avs.h"
@@ -45,6 +51,13 @@
 #define PRI_SRC_SEL_HFPLL_DIV2	2
 
 #define SECCLKAGD		BIT(4)
+
+#define PANTECH_ACPUPVS
+#if defined(PANTECH_ACPUPVS)
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
+//#include <soc/qcom/socinfo.h>
+#endif
 
 static DEFINE_MUTEX(driver_lock);
 static DEFINE_SPINLOCK(l2_lock);
@@ -59,6 +72,9 @@ static struct drv_data {
 	int boost_uv;
 	struct device *dev;
 } drv;
+#ifdef CONFIG_PANTECH_SMB347_CHARGER
+extern unsigned int pantech_charging_status(void);
+#endif
 
 static unsigned long acpuclk_krait_get_rate(int cpu)
 {
@@ -544,6 +560,12 @@ static int acpuclk_krait_set_rate(int cpu, unsigned long rate,
 
 	dev_dbg(drv.dev, "Switching from ACPU%d rate %lu KHz -> %lu KHz\n",
 		cpu, strt_acpu_s->khz, tgt_acpu_s->khz);
+#if defined(CONFIG_PANTECH_DEBUG)
+#if defined(CONFIG_PANTECH_DEBUG_DCVS_LOG) //p14291_121102
+	if(pantech_debug_enable)
+		pantech_debug_dcvs_log(cpu, strt_acpu_s->khz, tgt_acpu_s->khz);
+#endif
+#endif
 
 	/*
 	 * If we are setting the rate as part of power collapse or in the resume
@@ -872,7 +894,14 @@ static int __cpuinit per_cpu_init(int cpu)
 		goto err_ioremap;
 	}
 
+#ifdef CONFIG_PANTECH_SMB347_CHARGER
+	if(pantech_charging_status())
+		acpu_level = find_min_acpu_level();
+	else
+		acpu_level = find_cur_acpu_level(cpu);
+#else
 	acpu_level = find_cur_acpu_level(cpu);
+#endif
 	if (!acpu_level) {
 		acpu_level = find_min_acpu_level();
 		if (!acpu_level) {
@@ -1071,6 +1100,28 @@ static int __init get_pvs_bin(u32 pte_efuse)
 	return pvs_bin;
 }
 
+#if defined(PANTECH_ACPUPVS)
+int proc_speed, proc_pvs, soc_ver;
+static int acpupvs_proc_show(struct seq_file *m, void *v)
+{
+	seq_printf(m, "SPEED BIN : 0x%x , PVS : 0x%x , SOC VER : 0x%x\n",\
+		proc_speed, proc_pvs, soc_ver);
+	return 0;
+}
+
+static int acpupvs_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, acpupvs_proc_show, NULL);
+}
+
+static const struct file_operations acpupvs_proc_fops = {
+	.open		= acpupvs_proc_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+#endif
+
 static struct pvs_table * __init select_freq_plan(u32 pte_efuse_phys,
 			struct pvs_table (*pvs_tables)[NUM_PVS])
 {
@@ -1089,6 +1140,20 @@ static struct pvs_table * __init select_freq_plan(u32 pte_efuse_phys,
 	/* Select frequency tables. */
 	bin_idx = get_speed_bin(pte_efuse_val);
 	tbl_idx = get_pvs_bin(pte_efuse_val);
+
+#if defined(PANTECH_ACPUPVS)
+	//struct device *dev = &pdev->dev;
+	//int proc_speed, proc_pvs, soc_ver;
+
+	if(!proc_create("acpu_pvs_info", 0, NULL, &acpupvs_proc_fops)) {
+	//	dev_info(dev, "Unable to create acpupvs proc.\n");
+	} else {
+		proc_speed = bin_idx;
+		proc_pvs = tbl_idx;
+		soc_ver = socinfo_get_version();
+	}
+#endif
+
 
 	return &pvs_tables[bin_idx][tbl_idx];
 }

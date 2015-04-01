@@ -23,6 +23,10 @@
 #include <linux/input.h>
 #include <linux/log2.h>
 
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING
+#include <mach/pantech_sys.h>
+#endif
+
 /* PON common register addresses */
 #define QPNP_PON_RT_STS(base)		(base + 0x10)
 #define QPNP_PON_PULL_CTL(base)		(base + 0x70)
@@ -163,6 +167,10 @@ qpnp_pon_input_dispatch(struct qpnp_pon *pon, u32 pon_type)
 	input_report_key(pon->pon_input, cfg->key_code,
 					(pon_rt_sts & pon_rt_bit));
 	input_sync(pon->pon_input);
+
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING
+	pantech_force_dump_key(cfg->key_code, 1);
+#endif
 
 	return 0;
 }

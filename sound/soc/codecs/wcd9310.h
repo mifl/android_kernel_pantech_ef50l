@@ -189,6 +189,9 @@ struct anc_header {
 	u32 num_anc_slots;
 };
 
+int wcd9310_headsetJackStatusGet(void); //HDJ_LS4_Sound_20120503 
+
+
 extern int tabla_mclk_enable(struct snd_soc_codec *codec, int mclk_enable,
 			     bool dapm);
 

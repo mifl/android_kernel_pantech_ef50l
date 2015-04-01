@@ -25,7 +25,13 @@ static int gpio_ref_count;
 void msm_camera_io_w(u32 data, void __iomem *addr)
 {
 	CDBG("%s: %08x %08x\n", __func__, (int) (addr), (data));
+#if 1//F_PANTECH_CAMERA_ABNORMAL_RESET//SR01558667    
+    wmb(); 
+    writel_relaxed((data), (addr)); 
+    wmb(); 
+#else
 	writel_relaxed((data), (addr));
+#endif
 }
 
 void msm_camera_io_w_mb(u32 data, void __iomem *addr)
@@ -38,7 +44,14 @@ void msm_camera_io_w_mb(u32 data, void __iomem *addr)
 
 u32 msm_camera_io_r(void __iomem *addr)
 {
+#if 1//F_PANTECH_CAMERA_ABNORMAL_RESET//SR01558667
+	uint32_t data; 
+	rmb(); 
+	data = readl_relaxed(addr); 
+	rmb(); 
+#else
 	uint32_t data = readl_relaxed(addr);
+#endif
 	CDBG("%s: %08x %08x\n", __func__, (int) (addr), (data));
 	return data;
 }
@@ -61,7 +74,17 @@ void msm_camera_io_memcpy_toio(void __iomem *dest_addr,
 	u32 *s = (u32 *) src_addr;
 
 	for (i = 0; i < len; i++)
+#if 1//F_PANTECH_CAMERA_ABNORMAL_RESET//SR01558667
+	for (i = 0; i < len; i++)
+	{ 
+        wmb(); 
+        writel_relaxed(*s++, d++); 
+        wmb(); 
+	}
+#else
+    for (i = 0; i < len; i++)
 		writel_relaxed(*s++, d++);
+#endif
 }
 
 void msm_camera_io_dump(void __iomem *addr, int size)
@@ -78,7 +101,13 @@ void msm_camera_io_dump(void __iomem *addr, int size)
 			snprintf(p_str, 12, "%08x: ", (u32) p);
 			p_str += 10;
 		}
+#if 1//F_PANTECH_CAMERA_ABNORMAL_RESET//SR01558667
+        rmb(); 
+        data = readl_relaxed(p++); 
+        rmb(); 
+#else
 		data = readl_relaxed(p++);
+#endif
 		snprintf(p_str, 12, "%08x ", data);
 		p_str += 9;
 		if ((i + 1) % 4 == 0) {
@@ -395,8 +424,12 @@ int msm_camera_request_gpio_table(struct msm_camera_sensor_info *sinfo,
 		sinfo->sensor_platform_info->gpio_conf;
 
 	if (!gpio_conf->gpio_no_mux) {
+#ifdef CONFIG_PANTECH_CAMERA
+		if (gpio_conf->cam_gpio_common_tbl == NULL) {
+#else
 		if (gpio_conf->cam_gpio_req_tbl == NULL ||
 			gpio_conf->cam_gpio_common_tbl == NULL) {
+#endif
 			pr_err("%s: NULL camera gpio table\n", __func__);
 			return -EFAULT;
 		}
@@ -421,6 +454,7 @@ int msm_camera_request_gpio_table(struct msm_camera_sensor_info *sinfo,
 			}
 		}
 		gpio_ref_count++;
+#ifndef CONFIG_PANTECH_CAMERA	
 		if (gpio_conf->cam_gpio_req_tbl_size) {
 			rc = gpio_request_array(gpio_conf->cam_gpio_req_tbl,
 				gpio_conf->cam_gpio_req_tbl_size);
@@ -432,10 +466,13 @@ int msm_camera_request_gpio_table(struct msm_camera_sensor_info *sinfo,
 				return rc;
 			}
 		}
+#endif		
 	} else {
 		gpio_ref_count--;
+#ifndef CONFIG_PANTECH_CAMERA
 		gpio_free_array(gpio_conf->cam_gpio_req_tbl,
 				gpio_conf->cam_gpio_req_tbl_size);
+#endif
 		if (!gpio_conf->gpio_no_mux && !gpio_ref_count)
 			gpio_free_array(gpio_conf->cam_gpio_common_tbl,
 				gpio_conf->cam_gpio_common_tbl_size);

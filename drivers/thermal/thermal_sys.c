@@ -37,6 +37,10 @@
 #include <net/netlink.h>
 #include <net/genetlink.h>
 
+#if defined(CONFIG_PANTECH_DEBUG)
+#include <mach/pantech_debug.h> 
+#endif
+
 MODULE_AUTHOR("Zhang Rui");
 MODULE_DESCRIPTION("Generic thermal management sysfs support");
 MODULE_LICENSE("GPL");
@@ -1122,7 +1126,16 @@ void thermal_zone_device_update(struct thermal_zone_device *tz)
 				if (!ret) {
 					pr_emerg("Critical temperature reached (%ld C), shutting down\n",
 						 temp/1000);
+#if defined(CONFIG_PANTECH_DEBUG)	
+					if(pantech_debug_enable) {
+						panic("Restarting system with command 'Thermal_sys'.\n");
+						return;
+					}
+					else
+						orderly_poweroff(true);
+#else
 					orderly_poweroff(true);
+#endif
 				}
 			}
 			break;
@@ -1150,7 +1163,16 @@ void thermal_zone_device_update(struct thermal_zone_device *tz)
 				printk(KERN_EMERG
 				"Critical temperature reached (%ld C), \
 					shutting down.\n", temp/1000);
+#if defined(CONFIG_PANTECH_DEBUG)
+					if (pantech_debug_enable) {
+						panic("Restarting system with command 'Thermal_sys'.\n");
+						return;
+					}
+					else
+						orderly_poweroff(true);
+#else
 				orderly_poweroff(true);
+#endif
 				}
 			}
 			break;

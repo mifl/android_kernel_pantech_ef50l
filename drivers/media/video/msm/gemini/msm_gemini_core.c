@@ -142,7 +142,7 @@ void *msm_gemini_core_framedone_irq(int gemini_irq_status, void *context)
 	buf_p = msm_gemini_hw_pingpong_active_buffer(&we_pingpong_buf);
 	if (buf_p) {
 		buf_p->framedone_len = msm_gemini_hw_encode_output_size();
-		pr_err("%s:%d] framedone_len %d\n", __func__, __LINE__,
+		GMN_DBG("%s:%d] framedone_len %d\n", __func__, __LINE__,
 			buf_p->framedone_len);
 	}
 
@@ -177,7 +177,7 @@ irqreturn_t msm_gemini_core_irq(int irq_num, void *context)
 	spin_unlock_irqrestore(&reset_lock, flags);
 	gemini_irq_status = msm_gemini_hw_irq_get_status();
 
-	pr_err("%s:%d] gemini_irq_status = %0x\n", __func__, __LINE__,
+	GMN_DBG("%s:%d] gemini_irq_status = %0x\n", __func__, __LINE__,
 		gemini_irq_status);
 
 	/*For reset and framedone IRQs, clear all bits*/

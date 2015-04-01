@@ -356,6 +356,14 @@ void mmc_start_bkops(struct mmc_card *card, bool from_exception)
 	if (!card->ext_csd.bkops_en)
 		return;
 
+/* 20121221 LS1-JHM modified : disabling BKOPS for samsung eMMC with firmware revision 0x12 (P018) */
+#ifdef CONFIG_FEATURE_PANTECH_SAMSUNG_EMMC_BUG_FIX
+	if (card->quirks & MMC_QUIRK_NO_BKOPS)
+		return;
+#else
+#error code PSH
+#endif
+
 	if ((card->bkops_info.cancel_delayed_work) && !from_exception) {
 		pr_debug("%s: %s: cancel_delayed_work was set, exit\n",
 			 mmc_hostname(card->host), __func__);
@@ -701,6 +709,10 @@ int mmc_interrupt_hpi(struct mmc_card *card)
 			if (err)
 				break;
 		} while (R1_CURRENT_STATE(status) == R1_STATE_PRG);
+/* 20121221 LS1-JHM modified : enabling BKOPS for eMMC performance */
+#ifdef CONFIG_FEATURE_PANTECH_SAMSUNG_EMMC_BUG_FIX
+		mmc_card_set_need_bkops(card);
+#endif
 	} else
 		pr_debug("%s: Left prg-state\n", mmc_hostname(card->host));
 
@@ -2034,6 +2046,11 @@ EXPORT_SYMBOL(mmc_can_erase);
 
 int mmc_can_trim(struct mmc_card *card)
 {
+/* 20121221 LS1-JHM modified : enabling DISCARD for eMMC performance */
+#ifdef CONFIG_FEATURE_PANTECH_SAMSUNG_EMMC_BUG_FIX
+	if(card->quirks & MMC_QUIRK_NO_TRIM)
+			return 0;
+#endif
 	if (card->ext_csd.sec_feature_support & EXT_CSD_SEC_GB_CL_EN)
 		return 1;
 	return 0;
@@ -2144,7 +2161,12 @@ unsigned int mmc_calc_max_discard(struct mmc_card *card)
 		return card->pref_erase;
 
 	max_discard = mmc_do_calc_max_discard(card, MMC_ERASE_ARG);
-	if (mmc_can_trim(card)) {
+	if (mmc_can_trim(card)
+/* 20121221 LS1-JHM modified : enabling BKOPS for eMMC performance */
+#ifdef CONFIG_FEATURE_PANTECH_SAMSUNG_EMMC_BUG_FIX
+			|| mmc_can_discard(card)
+#endif
+    ) {
 		max_trim = mmc_do_calc_max_discard(card, MMC_TRIM_ARG);
 		if (max_trim < max_discard)
 			max_discard = max_trim;

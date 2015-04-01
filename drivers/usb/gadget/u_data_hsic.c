@@ -23,6 +23,117 @@
 #include <mach/usb_bridge.h>
 #include <mach/usb_gadget_xport.h>
 
+#ifdef CONFIG_PANTECH_PDL_DLOAD
+// 20120514 na_sungju
+#include <linux/reboot.h>
+#include <linux/workqueue.h>
+#include "sky_rawdata.h"
+#include "u_serial.h"
+
+#if (0) //	F_PANTECH_SECBOOT
+//#include "../../../../../../../boot_images/core/securemsm/secboot/shared/inc/secboot_types.h"
+typedef struct
+{
+	#define SECBOOT_FUSE_FLAG_MAGIC_NUM     0xAAFFFF
+	#define SECBOOT_FUSE_FLAG_UNSET         0xF0F0F0
+	#define SECBOOT_FUSE_FLAG_SET           0xF1F1F1
+	#define SECBOOT_FUSE_NOT_BLOWN          0xF2F2F2
+	#define SECBOOT_FUSE_BLOWN              0xF3F3F3
+
+	unsigned int secboot_magic_num;
+
+	unsigned int auth_en;
+	unsigned int shk_blow;
+	unsigned int shk_rw_dis;
+	unsigned int jtag_dis;
+} secboot_fuse_flag;
+/*
+typedef struct
+{
+	#define SECBOOT_SECBOOT_CHECK_MAGIC_NUM     0xCCBBBB
+	#define SECBOOT_AUTH_IMG_NUM                16
+
+	uint32 secboot_magic_num;
+	uint32 auth_img_result[SECBOOT_AUTH_IMG_NUM];
+} secboot_auth_img_result;
+*/
+#endif
+
+enum {
+	DLOADINFO_NONE_STATE = 0,
+	DLOADINFO_AT_RESPONSE_STATE,
+	DLOADINFO_PHONE_INFO_STATE,
+	DLOADINFO_HASH_TABLE_STATE,
+	DLOADINFO_PARTI_TABLE_STATE,
+	DLOADINFO_FINISH_STATE,
+	DLOADINFO_MAX_STATE
+};
+
+enum {
+	FINISH_CMD = 0,
+	PHONE_INFO_CMD,
+	HASH_TABLE_CMD,
+	PARTI_TABLE_CMD,
+	MAX_PHONEINFO_CMD
+};
+
+typedef struct {
+	unsigned int partition_size_;
+	char   partition_name_[ 8 ];
+}partition_info_type;
+
+typedef  unsigned long int  uint32;      /* Unsigned 32 bit value */
+typedef  unsigned char      uint8;       /* Unsigned 8  bit value */
+
+typedef struct {
+	uint32 version_;
+	char   model_name_    [ 16 ];
+	char   binary_version_[ 16 ];
+	uint32 fs_version_;
+	uint32 nv_version_;
+	char   build_date_    [ 16 ];
+	char   build_time_    [ 16 ];
+
+
+	uint32 boot_loader_version_;
+	uint32 boot_section_id_[4];
+
+
+	uint32              efs_size_;
+	uint32              partition_num_;
+	partition_info_type partition_info_[ 6 ];
+
+	uint32 FusionID;
+	uint8  Imei[15];
+
+	/* F_PANTECH_SECBOOT - DO NOT erase this comment! */
+	char   secure_magic_[ 7 ];
+	// 20130423 p14694 jmkim Add field information
+	char sub_binary_version_[ 8 ];
+	uint32 preload_checksum;
+	uint8  reserved_2[ 42 ];
+
+} __attribute__((packed)) phoneinfo_type;
+
+static struct delayed_work phoneinfo_read_wqst;
+static char pantech_phoneinfo_buff[SECTOR_SIZE]={0,};
+static char temp_buf[SECTOR_SIZE]={0,};
+#define NV_UE_IMEI_SIZE             9
+#define IMEI_ADDR_MAGIC_NUM         0x88776655
+
+typedef struct
+{
+	uint32 imei_magic_num;
+	uint8 backup_imei[NV_UE_IMEI_SIZE];
+	uint8 emptspace[51];
+} imei_backup_info_type;
+
+static void load_phoneinfo_with_imei(struct work_struct *work_s);
+static unsigned fill_writereq(int *dloadinfo_state, struct usb_request *writereq);
+static unsigned int fill_phoneinfo(char *buff);
+static unsigned int check_phoneinfo(void);
+static int dloadinfo_state = DLOADINFO_NONE_STATE;
+#endif
 static unsigned int no_data_ports;
 
 #define GHSIC_DATA_RMNET_RX_Q_SIZE		50
@@ -289,6 +400,279 @@ static int ghsic_data_receive(void *p, void *data, size_t len)
 	return 0;
 }
 
+#ifdef CONFIG_PANTECH_PDL_DLOAD
+static unsigned int fill_phoneinfo(char *buff)
+{
+	phoneinfo_type *pantech_phoneinfo_buff_ptr;
+
+	pantech_phoneinfo_buff_ptr = (phoneinfo_type *)&pantech_phoneinfo_buff[16];
+	printk(KERN_ERR "%s: %d\n",__func__,__LINE__);
+
+	if(pantech_phoneinfo_buff_ptr->version_== 0){
+		printk(KERN_ERR "%s: phoneinfo is broken or empty\n", __func__);
+		return 0;
+	}
+	memcpy(buff, pantech_phoneinfo_buff, 16 + sizeof(phoneinfo_type));
+	printk(KERN_INFO "%s: phoneinfo is OK\n", __func__);
+	return (16 + sizeof(phoneinfo_type));
+}
+
+static unsigned int check_phoneinfo(void)
+{
+	phoneinfo_type *pantech_phoneinfo_buff_ptr;
+
+	pantech_phoneinfo_buff_ptr = (phoneinfo_type *)&pantech_phoneinfo_buff[16];
+
+	if(pantech_phoneinfo_buff_ptr->version_== 0){
+		// 20120314, albatros, packet communication performance..
+		printk(KERN_ERR "%s: phoneinfo is broken or empty\n", __func__);
+		return 0;
+	}
+
+	// 20120314, albatros, packet communication performance..
+	//printk(KERN_INFO "%s: phoneinfo is OK\n", __func__);
+	return 1;
+}
+
+static void load_phoneinfo_with_imei(struct work_struct *work_s)
+{
+	struct file *rawdata_filp;
+	char read_buf[SECTOR_SIZE];
+	mm_segment_t oldfs;
+	int rc;
+	phoneinfo_type *pantech_phoneinfo_buff_ptr;
+
+	static int read_count = 0;
+
+	imei_backup_info_type *imei_backup_info_buf;
+
+	printk(KERN_INFO "%s: read phone info start\n", __func__);
+
+	// phoneinfo buffer init
+	memset( pantech_phoneinfo_buff, 0x0, SECTOR_SIZE );
+
+
+	pantech_phoneinfo_buff[0] = 1;
+	pantech_phoneinfo_buff[9] = 1;
+	pantech_phoneinfo_buff_ptr = (phoneinfo_type *)&pantech_phoneinfo_buff[16];
+
+
+	oldfs = get_fs();
+	set_fs(KERNEL_DS);
+	rawdata_filp = filp_open("/dev/block/mmcblk0p12", O_RDONLY | O_SYNC, 0);
+	if( IS_ERR(rawdata_filp) )
+	{
+		set_fs(oldfs);
+		printk(KERN_ERR "%s: filp_open error\n",__func__);
+		return;
+	}
+	set_fs(oldfs);
+	printk(KERN_INFO "%s: file open OK\n", __func__);
+
+
+	rawdata_filp->f_pos = 0;
+	memset( read_buf, 0x0, SECTOR_SIZE );
+	// read
+	if(((rawdata_filp->f_flags & O_ACCMODE) & O_RDONLY) != 0)
+	{
+		printk(KERN_ERR "%s: read permission denied\n",__func__);
+		return;
+	}
+
+	oldfs = get_fs();
+	set_fs(KERNEL_DS);
+	rc = rawdata_filp->f_op->read(rawdata_filp, read_buf, SECTOR_SIZE, &rawdata_filp->f_pos);
+	if (rc < 0)
+	{
+		set_fs(oldfs);
+		printk(KERN_ERR "%s: read phoneinfo error = %d \n",__func__,rc);
+		filp_close(rawdata_filp, NULL);
+		return;
+	}
+	set_fs(oldfs);
+	memcpy(pantech_phoneinfo_buff_ptr, &read_buf[32], sizeof(phoneinfo_type));
+
+	printk(KERN_INFO "%s: read Phoneinfo OK\n", __func__);
+	rawdata_filp->f_pos = NON_SECURE_IMEI_START;
+	memset( read_buf, 0x0, SECTOR_SIZE );
+	printk(KERN_ERR "%s: rawdata_filp->f_pos = %x \n",__func__,NON_SECURE_IMEI_START);
+
+	// read
+	if(((rawdata_filp->f_flags & O_ACCMODE) & O_RDONLY) != 0)
+	{
+		printk(KERN_ERR "%s: read permission denied\n",__func__);
+		return;
+	}
+	oldfs = get_fs();
+	set_fs(KERNEL_DS);
+	rc = rawdata_filp->f_op->read(rawdata_filp, read_buf, 16, &rawdata_filp->f_pos);
+	if (rc < 0) {
+		set_fs(oldfs);
+		printk(KERN_ERR "%s: read imei error = %d \n",__func__,rc);
+		filp_close(rawdata_filp, NULL);
+		return;
+	}
+	set_fs(oldfs);
+
+	#if 0 //test
+	printk(KERN_ERR "%s : imei <%x> %x %x %x %x , %x %x %x %x, %x %x %x %x, %x %x %x \n",__func__,0,read_buf[0],read_buf[1],read_buf[2],read_buf[3],read_buf[4],read_buf[5],read_buf[6],read_buf[7],read_buf[8],read_buf[9],read_buf[10],read_buf[11],read_buf[12],read_buf[13],read_buf[14]);
+	#endif
+
+	printk(KERN_INFO "%s: read IMEI OK\n", __func__);
+
+	imei_backup_info_buf = (imei_backup_info_type *)&read_buf[0];
+	if(imei_backup_info_buf->imei_magic_num & IMEI_ADDR_MAGIC_NUM)
+	{
+		memcpy(pantech_phoneinfo_buff_ptr->Imei, read_buf+4, NV_UE_IMEI_SIZE);
+	}
+
+#if (0) 	//F_PANTECH_SECBOOT
+	{
+		secboot_fuse_flag *secboot_flag_ptr = NULL;
+		const char str_secure[] = "$3(UR3"; // secure target
+		const char str_non_secure[] = "3ru(3$"; // non-secure target
+
+		rawdata_filp->f_pos = PANTECH_SECBOOT_FLAG_START;
+		memset(read_buf, 0, SECTOR_SIZE);
+		printk(KERN_ERR "%s: PANTECH_SECBOOT_FLAG pos=%x\n", __func__, PANTECH_SECBOOT_FLAG_START);
+
+		if (((rawdata_filp->f_flags & O_ACCMODE) & O_RDONLY) != 0)
+		{
+			printk(KERN_ERR "%s: PANTECH_SECBOOT_FLAG permission denied!\n", __func__);
+			printk(KERN_ERR "%s: secure target (for safety)\n", __func__);
+			strcpy(pantech_phoneinfo_buff_ptr->secure_magic_, str_secure);
+			return;
+		}
+
+		oldfs = get_fs();
+		set_fs(KERNEL_DS);
+
+		rc = rawdata_filp->f_op->read(rawdata_filp, read_buf, SECTOR_SIZE, &rawdata_filp->f_pos);
+		if (rc < 0) {
+			set_fs(oldfs);
+			printk(KERN_ERR "%s: PANTECH_SECBOOT_FLAG read failed! (%d)\n", __func__, rc);
+			printk(KERN_ERR "%s: secure target (for safety)\n", __func__);
+			strcpy(pantech_phoneinfo_buff_ptr->secure_magic_, str_secure);
+			filp_close(rawdata_filp, NULL);
+			return;
+		}
+
+		set_fs(oldfs);
+
+		printk(KERN_INFO "%s: PANTECH_SECBOOT_FLAG read done\n", __func__);
+
+		secboot_flag_ptr = (secboot_fuse_flag *)&read_buf[0];
+
+		if (secboot_flag_ptr->secboot_magic_num == SECBOOT_FUSE_FLAG_MAGIC_NUM)
+		{
+			printk(KERN_ERR "%s: PANTECH_SECBOOT_FLAG valid magic\n", __func__);
+
+			if (secboot_flag_ptr->auth_en == SECBOOT_FUSE_NOT_BLOWN)
+			{
+				printk(KERN_ERR "%s: PANTECH_SECBOOT_FLAG non-secure target\n", __func__);
+				strcpy(pantech_phoneinfo_buff_ptr->secure_magic_, str_non_secure);
+			}
+			else if (secboot_flag_ptr->auth_en == SECBOOT_FUSE_BLOWN)
+			{
+				printk(KERN_ERR "%s: PANTECH_SECBOOT_FLAG secure target\n", __func__);
+				strcpy(pantech_phoneinfo_buff_ptr->secure_magic_, str_secure);
+			}
+			else
+			{
+				printk(KERN_ERR "%s: PANTECH_SECBOOT_FLAG secure target (for safety)\n", __func__);
+				strcpy(pantech_phoneinfo_buff_ptr->secure_magic_, str_secure);
+			}
+		}
+		else
+		{
+			printk(KERN_ERR "%s: PANTECH_SECBOOT_FLAG invalid magic!\n", __func__);
+			printk(KERN_ERR "%s: secure target (for safety)\n", __func__);
+			strcpy(pantech_phoneinfo_buff_ptr->secure_magic_, str_secure);
+		}
+	}
+#endif
+
+	filp_close(rawdata_filp, NULL);
+
+	if(check_phoneinfo() != 1 && read_count < 5)
+	{
+		schedule_delayed_work(&phoneinfo_read_wqst, HZ*10);
+		read_count++;
+	}
+
+	printk(KERN_INFO "%s: read phone info end : read_count = %d\n", __func__, read_count);
+	return;
+
+}
+
+unsigned fill_writereq(int *dloadinfo_state, struct usb_request *writereq)
+{
+	unsigned len = TX_BUF_SIZE;
+	printk(KERN_ERR "%s: 1. port state : %d ", __func__,*dloadinfo_state);
+	switch( *dloadinfo_state )
+	{
+		case DLOADINFO_AT_RESPONSE_STATE:
+		{
+		printk(KERN_ERR "%s: 2. ", __func__);
+		memcpy(writereq->buf, "AT*PHONEINFO*WAIT", sizeof("AT*PHONEINFO*WAIT")-1);
+		writereq->length = sizeof("AT*PHONEINFO*WAIT")-1;
+		len = writereq->length;
+		printk(KERN_ERR "%s: AT*PHONEINFO*WAIT", __func__);
+		}
+		break;
+
+		case DLOADINFO_PHONE_INFO_STATE:
+		{
+			printk(KERN_ERR "%s: 3. ", __func__);
+			//int i;
+
+			// header
+			//    command       2byte
+			//    ack_nack      2byte
+			//    error_code    4byte
+			//    data_length   4byte
+			//    reserved      4byte
+
+			printk(KERN_ERR "%s: case DLOADINFO_PHONE_INFO_STATE", __func__);
+			memset( writereq->buf, 0x0, 16 + sizeof(phoneinfo_type) );
+			len = writereq->length = fill_phoneinfo((char *)writereq->buf);
+
+			#if 0 //test
+			for( i=3; i < len/16; i++ )
+			{
+				printk(KERN_ERR "%s : phoneinfo <%x> %x %x %x %x, %x %x %x %x, %x %x %x %x, %x %x %x %x\n",__func__,i*16,tx_buf[i*16],tx_buf[i*16+1],tx_buf[i*16+2],tx_buf[i*16+3],tx_buf[i*16+4],tx_buf[i*16+5],tx_buf[i*16+6],tx_buf[i*16+7],tx_buf[i*16+8],tx_buf[i*16+9],tx_buf[i*16+10],tx_buf[i*16+11],tx_buf[i*16+12],tx_buf[i*16+13],tx_buf[i*16+14],tx_buf[i*16+15]);
+			}
+			#endif
+
+			printk(KERN_ERR "%s: packet make DLOADINFO_PHONE_INFO_STATE", __func__);
+		}
+		break;
+
+		case DLOADINFO_FINISH_STATE:
+		{
+			printk(KERN_ERR "%s: 4 ", __func__);
+			// header
+			//    command       2byte
+			//    ack_nack      2byte
+			//    error_code    4byte
+			//    data_length   4byte
+			//    reserved      4byte
+
+			printk(KERN_ERR "%s: case DLOADINFO_FINISH_STATE", __func__);
+			memset( writereq->buf, 0x0, 16 );
+			writereq->length = 16;
+			len = writereq->length;
+
+			*dloadinfo_state = DLOADINFO_NONE_STATE;
+			printk(KERN_ERR "%s: set DLOADINFO_NONE_STATE", __func__);
+		}
+		break;
+	}
+	printk(KERN_ERR "%s: 5. length %d ", __func__,len);
+	return len;
+}
+#endif
+
 static void ghsic_data_write_tomdm(struct work_struct *w)
 {
 	struct gdata_port	*port;
@@ -296,6 +680,9 @@ static void ghsic_data_write_tomdm(struct work_struct *w)
 	struct timestamp_info	*info;
 	unsigned long		flags;
 	int			ret;
+#ifdef CONFIG_PANTECH_PDL_DLOAD
+	const unsigned short DLOADINFO_PACKET_VERSION = 0;
+#endif
 
 	port = container_of(w, struct gdata_port, write_tomdm_w);
 
@@ -312,6 +699,52 @@ static void ghsic_data_write_tomdm(struct work_struct *w)
 		pr_debug("%s: port:%p tom:%lu pno:%d\n", __func__,
 				port, port->to_modem, port->port_num);
 
+#ifdef CONFIG_PANTECH_PDL_DLOAD
+		if(check_phoneinfo() == 1) {
+			if(memcmp(skb->data, "AT*PHONEINFO*RESET", (sizeof("AT*PHONEINFO*RESET") -1) ) == 0) {
+				spin_unlock_irqrestore(&port->rx_lock, flags);
+				printk(KERN_ERR "%s : PDL IDLE PLOAD REBOOT", __func__);
+				//kernel_restart("oem-33"); //kernel_restart do not work because of device_shutdown() error
+				machine_restart("oem-33");
+				return;
+			} else if(memcmp(skb->data, "AT*PHONEINFO", sizeof("AT*PHONEINFO")-1) == 0 ) {
+				printk(KERN_ERR "%s: go DLOADINFO_AT_RESPONSE_STATE", __func__);
+				dloadinfo_state = DLOADINFO_AT_RESPONSE_STATE;
+			} else if( dloadinfo_state == DLOADINFO_AT_RESPONSE_STATE || dloadinfo_state == DLOADINFO_PHONE_INFO_STATE ) {
+				printk(KERN_ERR "%s: if %d", __func__, dloadinfo_state);
+				if( *(unsigned int *)(skb->data) == (PHONE_INFO_CMD|(DLOADINFO_PACKET_VERSION<<16)) ) {
+					dloadinfo_state = DLOADINFO_PHONE_INFO_STATE;
+					printk(KERN_ERR "%s: go DLOADINFO_PHONE_INFO_STATE", __func__);
+				}
+				if( *(unsigned int *)(skb->data) == (FINISH_CMD|(DLOADINFO_PACKET_VERSION<<16)) ) {
+					dloadinfo_state = DLOADINFO_FINISH_STATE;
+					printk(KERN_ERR "%s: go DLOADINFO_FINISH_STATE", __func__);
+				}
+			}
+
+			if( dloadinfo_state != DLOADINFO_NONE_STATE ) {
+				int pdl_ret=0;
+				struct usb_request *pdl_req=NULL;
+				struct usb_ep	*ep_in=port->in;
+				pdl_req=usb_ep_alloc_request(ep_in, GFP_ATOMIC);
+				if(pdl_req!=NULL)
+				{
+					printk(KERN_ERR "%s: run cmd send_dload_packet download state %d", __func__, dloadinfo_state);
+					pdl_req->buf = temp_buf;
+					pdl_req->length = fill_writereq(&dloadinfo_state, pdl_req);
+
+					//spin_unlock_irqrestore(&port->tx_lock, flags);
+					pdl_ret = usb_ep_queue(ep_in, pdl_req, GFP_KERNEL);
+					//spin_lock_irqsave(&port->tx_lock, flags);
+					if (pdl_ret)
+					{
+						usb_ep_free_request(ep_in, pdl_req);
+						printk(KERN_ERR "%s: pdl usb epIn failed\n", __func__);
+					}
+				}
+			}
+		}
+#endif
 		info = (struct timestamp_info *)skb->cb;
 		info->rx_done_sent = get_timestamp();
 		spin_unlock_irqrestore(&port->rx_lock, flags);
@@ -1154,7 +1587,10 @@ int ghsic_data_setup(unsigned num_ports, enum gadget_type gtype)
 		return -EINVAL;
 	}
 	pr_debug("%s: count: %d\n", __func__, num_ports);
-
+#ifdef CONFIG_PANTECH_PDL_DLOAD
+ //   INIT_DELAYED_WORK(&phoneinfo_read_wqst, load_phoneinfo_with_imei);		// P14774 RMNET + ADB mode, rebooting dump bug fix
+	schedule_delayed_work(&phoneinfo_read_wqst, HZ*10);
+#endif
 	for (i = first_port_id; i < (num_ports + first_port_id); i++) {
 
 		/*probe can be called while port_alloc,so update no_data_ports*/
@@ -1182,6 +1618,9 @@ static int __init ghsic_data_init(void)
 {
 	ghsic_data_debugfs_init();
 
+#ifdef CONFIG_PANTECH_PDL_DLOAD
+    INIT_DELAYED_WORK(&phoneinfo_read_wqst, load_phoneinfo_with_imei);
+#endif
 	return 0;
 }
 module_init(ghsic_data_init);

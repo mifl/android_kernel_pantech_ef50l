@@ -25,6 +25,12 @@
 
 #include "clock.h"
 
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING
+#include <linux/io.h>
+#include "acpuclock.h"
+#endif
+
+
 static int clock_debug_rate_set(void *data, u64 val)
 {
 	struct clk *clock = data;
@@ -53,6 +59,27 @@ DEFINE_SIMPLE_ATTRIBUTE(clock_rate_fops, clock_debug_rate_get,
 			clock_debug_rate_set, "%llu\n");
 
 static struct clk *measure;
+
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING
+void disable_l2_clock(void)
+{
+	void __iomem *l2_hfpll_address = l2_hfpll_address = ioremap(0x00903300, 4); //acpuclock-8064.c [L2]hfpll_phy_base
+	acpuclk_set_rate(0, 576000, SETRATE_CPUFREQ);
+	writel(0, l2_hfpll_address);
+}
+
+int cause_secure_bite_get(void *data, u64 *val)
+{
+	pr_crit("Causing a secure bite\n");
+	disable_l2_clock();
+	pr_crit("We are dead. This will not print.\n");
+
+	return 0;
+}
+
+DEFINE_SIMPLE_ATTRIBUTE(secure_bite_fops, cause_secure_bite_get,
+			NULL, "%lld\n");
+#endif
 
 static int clock_debug_measure_get(void *data, u64 *val)
 {
@@ -329,6 +356,11 @@ int __init clock_debug_init(void)
 		debugfs_remove_recursive(debugfs_base);
 		return -ENOMEM;
 	}
+
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING
+	debugfs_create_file("secure_bite", S_IRUGO, debugfs_base, NULL,
+		&secure_bite_fops);
+#endif
 
 	measure = clk_get_sys("debug", "measure");
 	if (IS_ERR(measure))

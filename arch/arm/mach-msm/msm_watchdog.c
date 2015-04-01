@@ -46,6 +46,67 @@
 
 #define WDT_HZ		32768
 
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING
+#define TZBSP_CPU_COUNT           4
+typedef  unsigned int uint32;
+
+typedef struct tzbsp_mon_cpu_ctx_s
+{
+	uint32 mon_lr;
+	uint32 mon_spsr;
+	uint32 usr_r0;
+	uint32 usr_r1;
+	uint32 usr_r2;
+	uint32 usr_r3;
+	uint32 usr_r4;
+	uint32 usr_r5;
+	uint32 usr_r6;
+	uint32 usr_r7;
+	uint32 usr_r8;
+	uint32 usr_r9;
+	uint32 usr_r10;
+	uint32 usr_r11;
+	uint32 usr_r12;
+	uint32 usr_r13;
+	uint32 usr_r14;
+	uint32 irq_spsr;
+	uint32 irq_r13;
+	uint32 irq_r14;
+	uint32 svc_spsr;
+	uint32 svc_r13;
+	uint32 svc_r14;
+	uint32 abt_spsr;
+	uint32 abt_r13;
+	uint32 abt_r14;
+	uint32 und_spsr;
+	uint32 und_r13;
+	uint32 und_r14;
+	uint32 fiq_spsr;
+	uint32 fiq_r8;
+	uint32 fiq_r9;
+	uint32 fiq_r10;
+	uint32 fiq_r11;
+	uint32 fiq_r12;
+	uint32 fiq_r13;
+	uint32 fiq_r14;
+} tzbsp_mon_cpu_ctx_t;
+
+/* Structure of the entire non-secure context dump buffer. Because TZ is single
+ * entry only a single secure context is saved. */
+typedef struct tzbsp_dump_buf_s
+{
+	uint32 magic;
+	uint32 version;
+	uint32 cpu_count;
+	uint32 sc_status[TZBSP_CPU_COUNT];
+	tzbsp_mon_cpu_ctx_t sc_ns[TZBSP_CPU_COUNT];
+	tzbsp_mon_cpu_ctx_t sec;
+	uint32 wdt0_sts[TZBSP_CPU_COUNT];
+} tzbsp_dump_buf_t;
+
+tzbsp_dump_buf_t* tzbsp_dump_temp = NULL;
+#endif
+
 struct msm_watchdog_dump msm_dump_cpu_ctx;
 
 static void __iomem *msm_wdt_base;
@@ -418,9 +479,18 @@ static void init_watchdog_work(struct work_struct *work)
 	return;
 }
 
+/* (+) p16652 - for watchdog debugging */
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING
+struct msm_watchdog_pdata *p_wdog_dd = NULL;
+#endif
+
 static int msm_watchdog_probe(struct platform_device *pdev)
 {
 	struct msm_watchdog_pdata *pdata = pdev->dev.platform_data;
+
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING
+	p_wdog_dd = pdata;
+#endif
 
 	if (!enable || !pdata || !pdata->pet_time || !pdata->bark_time) {
 		printk(KERN_INFO "MSM Watchdog Not Initialized\n");

@@ -407,8 +407,13 @@ static int msm_voice_rx_device_mute_put(struct snd_kcontrol *kcontrol,
 static int msm_volte_rx_device_mute_get(struct snd_kcontrol *kcontrol,
 					struct snd_ctl_elem_value *ucontrol)
 {
+#ifdef CONFIG_SKY_SND_AUTOANSWER /* 2013-03-18 LS1@SND Added for domestic Autoanswer Rx mute on/off */
+    ucontrol->value.integer.value[0] =
+		voc_get_rx_device_mute(voc_get_session_id(VOIP_SESSION_NAME));
+#else
 	ucontrol->value.integer.value[0] =
 		voc_get_rx_device_mute(voc_get_session_id(VOLTE_SESSION_NAME));
+#endif
 	return 0;
 }
 
@@ -418,9 +423,11 @@ static int msm_volte_rx_device_mute_put(struct snd_kcontrol *kcontrol,
 	int mute = ucontrol->value.integer.value[0];
 
 	pr_debug("%s: mute=%d\n", __func__, mute);
-
+#ifdef CONFIG_SKY_SND_AUTOANSWER /* 2013-03-18 LS1@SND Added for domestic Autoanswer Rx mute on/off */
+    voc_set_rx_device_mute(voc_get_session_id(VOIP_SESSION_NAME), mute);
+#else
 	voc_set_rx_device_mute(voc_get_session_id(VOLTE_SESSION_NAME), mute);
-
+#endif
 	return 0;
 }
 

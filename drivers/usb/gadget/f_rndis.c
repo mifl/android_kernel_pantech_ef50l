@@ -684,6 +684,9 @@ static void rndis_close(struct gether *geth)
 	rndis_signal_disconnect(rndis->config);
 }
 
+#ifdef CONFIG_PANTECH_ANDROID_USB
+ushort getVendorID(void);
+#endif
 /*-------------------------------------------------------------------------*/
 
 /* ethernet function driver setup/binding */
@@ -695,6 +698,9 @@ rndis_bind(struct usb_configuration *c, struct usb_function *f)
 	struct f_rndis		*rndis = func_to_rndis(f);
 	int			status;
 	struct usb_ep		*ep;
+#ifdef CONFIG_PANTECH_ANDROID_USB
+	ushort vid;
+#endif
 
 	/* allocate instance-specific interface IDs */
 	status = usb_interface_id(c, f);
@@ -713,6 +719,17 @@ rndis_bind(struct usb_configuration *c, struct usb_function *f)
 
 	rndis_data_intf.bInterfaceNumber = status;
 	rndis_union_desc.bSlaveInterface0 = status;
+
+#ifdef CONFIG_PANTECH_ANDROID_USB
+	vid = getVendorID();
+	if (vid == 0x05C6) {
+		//printk("^^^^ It's Qualcomm rndis\n");
+		rndis_data_intf.bInterfaceProtocol = 0;
+	} else {
+		//printk("^^^^ It's SKY rndis\n");
+		rndis_data_intf.bInterfaceProtocol = 0xFF;
+	}
+#endif
 
 	status = -ENODEV;
 

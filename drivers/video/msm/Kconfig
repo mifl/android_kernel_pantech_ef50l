@@ -111,7 +111,7 @@ config FB_MSM_MDDI
 
 config FB_MSM_MIPI_DSI
 	bool
-	default n
+	default y
 
 config FB_MSM_LCDC
 	bool
@@ -173,6 +173,21 @@ config FB_MSM_LCDC_PANEL
 	bool
 	select FB_MSM_LCDC
 	default n
+
+config FB_PANTECH_MIPI_DSI_RENESAS
+	bool
+	select FB_PANTECH_MIPI_DSI
+	default n
+	
+config FB_PANTECH_MIPI_DSI_SONY
+	bool
+	select FB_PANTECH_MIPI_DSI
+	default n	
+	
+config FB_PANTECH_MIPI_DSI_ROHM
+	bool
+	select FB_PANTECH_MIPI_DSI
+	default y
 
 config FB_MSM_MIPI_DSI_TOSHIBA
 	bool
@@ -316,6 +331,21 @@ config FB_MSM_MIPI_LGIT_VIDEO_WXGA_PT
 	select FB_MSM_MIPI_DSI_LGIT
 	default n
 
+config FB_PANTECH_MIPI_RENESAS_VIDEO_FHD
+	bool
+	select FB_PANTECH_MIPI_DSI_RENESAS
+	default n
+	
+config FB_PANTECH_SONY_CMD_VIDEO_HD
+	bool
+	select FB_PANTECH_MIPI_DSI_SONY
+	default n
+	
+config FB_PANTECH_MIPI_ROHM_VIDEO_HD
+	bool
+	select FB_PANTECH_MIPI_DSI_ROHM
+	default n
+	 
 config FB_MSM_LVDS_CHIMEI_WXGA
 	bool
 	select FB_MSM_LVDS
@@ -673,6 +703,23 @@ config FB_MSM_MDDI_SHARP_QVGA_128x128
 	select FB_MSM_MDDI
 	---help---
 	  Support for MDDI Sharp QVGA (240x320) and 128x128 dual panel
+
+config FB_PANTECH_MIPI_RENESAS_VIDEO_FHD_PANEL
+	bool "MIPI Renesas Full HD Panel(EF51)"
+	select FB_PANTECH_MIPI_RENESAS_VIDEO_FHD
+	
+config FB_PANTECH_MIPI_SONY_CMD_HD_PANEL
+	bool "MIPI SONY CMD HD Panel(EF52)"
+	select FB_PANTECH_SONY_CMD_VIDEO_HD
+
+config FB_PANTECH_MIPI_SONY_VIDEO_HD_PANEL
+	bool "MIPI SONY VIDEO HD Panel(ef52-ws)"
+	select FB_PANTECH_SONY_CMD_VIDEO_HD
+
+config FB_PANTECH_MIPI_ROHM_VIDEO_HD_PANEL
+	bool "MIPI Rohm HD Panel(EF48S)"
+	select FB_PANTECH_MIPI_ROHM_VIDEO_HD
+	
 
 config FB_MSM_MIPI_LGIT_VIDEO_WXGA_PT_PANEL
 	bool "MIPI LG Display WXGA PT Panel"

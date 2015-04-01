@@ -115,4 +115,8 @@ int32_t msm_sensor_free_sensor_data(struct msm_sensor_ctrl_t *s_ctrl);
 #define VIDIOC_MSM_SENSOR_CSID_INFO\
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 12, struct msm_sensor_csi_info *)
 
+#ifdef CONFIG_PANTECH_CAMERA//F_PANTECH_CAMERA
+extern int8_t release_flag;//test_for_ce1502
+#endif
+
 #endif

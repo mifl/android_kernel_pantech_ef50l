@@ -83,3 +83,10 @@ config EXT4_DEBUG
 
 	  If you select Y here, then you will be able to turn on debugging
 	  with a command such as "echo 1 > /sys/kernel/debug/ext4/mballoc-debug"
+
+config PANTECH_FS_AUTO_REPAIR 
+	bool "Ext4 User Data recovery(PANTECH)"
+	depends on EXT4_FS
+	default y
+	help
+	  Recovery ext4 Userdata, in case of file system error.

@@ -42,6 +42,12 @@
 #include <linux/lockdep.h>
 #include <linux/idr.h>
 
+#if defined(CONFIG_PANTECH_DEBUG)
+#ifdef CONFIG_PANTECH_DEBUG_SCHED_LOG  //p14291_pantech_dbg
+#include <mach/pantech_debug.h> 
+#endif
+#endif
+
 #include "workqueue_sched.h"
 
 enum {
@@ -1865,6 +1871,13 @@ __acquires(&gcwq->lock)
 	 */
 	if (unlikely(cpu_intensive))
 		worker_set_flags(worker, WORKER_CPU_INTENSIVE, true);
+
+#if defined(CONFIG_PANTECH_DEBUG)
+#ifdef CONFIG_PANTECH_DEBUG_SCHED_LOG  //p14291_121102
+	if(pantech_debug_enable)
+		pantechdbg_sched_msg("@%pS", f);
+#endif
+#endif
 
 	spin_unlock_irq(&gcwq->lock);
 

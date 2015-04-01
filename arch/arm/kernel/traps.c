@@ -34,6 +34,14 @@
 #include <asm/unwind.h>
 #include <asm/tls.h>
 #include <asm/system_misc.h>
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING
+#include <mach/pantech_sys.h>
+#endif
+#if defined(CONFIG_PANTECH_DEBUG) 
+#if defined(CONFIG_PANTECH_DEBUG_SCHED_LOG) //p14291_121102
+#include <mach/pantech_debug.h>
+#endif
+#endif
 
 #include "signal.h"
 
@@ -275,6 +283,10 @@ static int __die(const char *str, int err, struct thread_info *thread, struct pt
 
 	print_modules();
 	__show_regs(regs);
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING
+	__save_regs_and_mmu(regs, true);
+#endif
+
 	printk(KERN_EMERG "Process %.*s (pid: %d, stack limit = 0x%p)\n",
 		TASK_COMM_LEN, tsk->comm, task_pid_nr(tsk), thread + 1);
 
@@ -302,9 +314,21 @@ void die(const char *str, struct pt_regs *regs, int err)
 	int ret;
 	enum bug_trap_type bug_type = BUG_TRAP_TYPE_NONE;
 
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING
+	pantech_sys_reset_reason_set(SYS_RESET_REASON_LINUX);
+#endif
+
 	oops_enter();
 
 	raw_spin_lock_irq(&die_lock);
+
+#if defined(CONFIG_PANTECH_DEBUG)
+#ifdef CONFIG_PANTECH_DEBUG_SCHED_LOG  //p14291_pantech_dbg
+	if(pantech_debug_enable)
+		pantechdbg_sched_msg("!!die!!");
+#endif
+#endif
+
 	console_verbose();
 	bust_spinlocks(1);
 	if (!user_mode(regs))

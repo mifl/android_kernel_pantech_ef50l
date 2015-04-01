@@ -37,6 +37,10 @@
 
 #include "smd_private.h"
 
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING
+#include <mach/pantech_sys.h>
+#endif
+
 struct subsys_soc_restart_order {
 	const char * const *subsystem_list;
 	int count;
@@ -483,6 +487,151 @@ static void __subsystem_restart_dev(struct subsys_device *dev)
 	spin_unlock_irqrestore(&dev->restart_lock, flags);
 }
 
+// p15060
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING
+/*
+static int rawdata_write_func(unsigned int offset, unsigned int write_size, char* write_buf)
+{
+	struct file *rawdata_filp;
+	mm_segment_t oldfs;
+	int rc;
+
+	oldfs = get_fs();
+	set_fs(KERNEL_DS);
+	rawdata_filp = filp_open("/dev/block/mmcblk0p15", O_WRONLY | O_SYNC, 0);  // always have to check rawdata partition, check /dev/block/platform/msm_sdcc.1/by-name
+	if (IS_ERR(rawdata_filp)) {
+		set_fs(oldfs);
+		pr_err("%s: filp_open error\n",__func__);
+		return -1;
+	}
+	set_fs(oldfs);
+	pr_info("%s: file open OK\n", __func__);
+
+	rawdata_filp->f_pos = offset;
+	if (((rawdata_filp->f_flags & O_ACCMODE) & O_RDONLY) != 0) {
+		pr_err("%s: rawdata read - permission denied!\n", __func__);
+		filp_close(rawdata_filp, NULL);
+		return -1;
+	}
+
+	oldfs = get_fs();
+	set_fs(KERNEL_DS);
+	rc = rawdata_filp->f_op->write(rawdata_filp, write_buf, write_size, &rawdata_filp->f_pos);
+	if (rc < 0) {
+		set_fs(oldfs);
+		pr_err("%s: write fail to rawdata = %d \n",__func__,rc);
+		filp_close(rawdata_filp, NULL);
+		return -1;
+	}
+	set_fs(oldfs);
+	filp_close(rawdata_filp, NULL);
+
+	return 0;
+}
+
+static int rawdata_read_func(unsigned int offset, unsigned int read_size, char* read_buf)
+{
+	struct file *rawdata_filp;
+	mm_segment_t oldfs;
+	int rc;
+
+	oldfs = get_fs();
+	set_fs(KERNEL_DS);
+	rawdata_filp = filp_open("/dev/block/mmcblk0p15", O_RDONLY | O_SYNC, 0);  // always have to check rawdata partition, check /dev/block/platform/msm_sdcc.1/by-name
+	if (IS_ERR(rawdata_filp)) {
+		set_fs(oldfs);
+		pr_err("%s: filp_open error\n",__func__);
+		return -1;
+	}
+	set_fs(oldfs);
+	pr_info("%s: file open OK\n", __func__);
+
+	rawdata_filp->f_pos = offset;
+	if (((rawdata_filp->f_flags & O_ACCMODE) & O_RDONLY) != 0) {
+		pr_err("%s: rawdata read - permission denied!\n", __func__);
+		filp_close(rawdata_filp, NULL);
+		return -1;
+	}
+
+	oldfs = get_fs();
+	set_fs(KERNEL_DS);
+	rc = rawdata_filp->f_op->read(rawdata_filp, read_buf, read_size, &rawdata_filp->f_pos);
+	if (rc < 0) {
+		set_fs(oldfs);
+		pr_err("%s: read fail from rawdata = %d \n",__func__,rc);
+		filp_close(rawdata_filp, NULL);
+		return -1;
+	}
+	set_fs(oldfs);
+	filp_close(rawdata_filp, NULL);
+
+	return 0;
+}
+
+static void ssr_reset_count_func( struct subsys_device *dev )
+{
+	unsigned char backup_buffer[SECTOR_SIZE];
+	p_system_information *p_sys_info = NULL;
+
+	memset( backup_buffer, 0, sizeof(backup_buffer) );
+	if (rawdata_read_func(PWR_ON_CNT_START, PWR_ON_CNT_LENGTH, backup_buffer) >= 0) {
+		p_sys_info = (p_system_information *)backup_buffer;
+
+		if (p_sys_info->system_information_start_magic != SYSTEM_INFORMATION_START_MAGIC_NUM
+				|| p_sys_info->system_information_end_magic != SYSTEM_INFORMATION_END_MAGIC_NUM) {
+			pr_err( "system info struct was broken." );
+			return;
+		}
+
+		if (!strncmp(dev->desc->name, "esoc0", 5)) {
+			// modem
+			p_sys_info->p_ssr_reason.ssr_reason_modem++;
+			pr_info( "Modem SSR count ++.\n" );
+		} else if (!strncmp(dev->desc->name, "AR6320", 6)) {
+			// wifi
+			p_sys_info->p_ssr_reason.ssr_reason_wifi++;
+			pr_info( "WIFI SSR count ++.\n" );
+		}
+
+		if( rawdata_write_func( PWR_ON_CNT_START, PWR_ON_CNT_LENGTH, backup_buffer) < 0) {
+			pr_err( "system info rawdata write failed.\n" );
+		}
+	} else {
+		pr_err( "Subsystem SSR setting read fail.\n" );
+	}
+}
+*/
+
+void excute_ssr_notification( struct work_struct *_work )
+{
+	char reason[16];
+	char *argv[4] = { NULL, NULL, reason, NULL };
+	char *envp[4] = { NULL, NULL, NULL, NULL };
+
+	argv[0] = "/system/bin/setprop";
+	argv[1] = "ssr.noti.start";
+
+	memset( argv[2], 0, sizeof(reason) );
+//	strcpy( argv[2], ssr_reason );
+	snprintf( reason, sizeof(reason), "0x%X", SYS_RESET_REASON_WIFI );
+
+	envp[0] = "HOME=/";
+	envp[1] = "TERM=vt100";
+	envp[2] = "PATH=/system/bin";
+
+	call_usermodehelper( argv[0], argv, envp, UMH_WAIT_EXEC );
+}
+
+struct excute_work {
+    struct work_struct work;
+};
+
+struct excute_work *ssr_noti_work;
+#endif
+
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING
+extern int wifissr;
+#endif
 int subsystem_restart_dev(struct subsys_device *dev)
 {
 	const char *name = dev->desc->name;
@@ -498,6 +647,16 @@ int subsystem_restart_dev(struct subsys_device *dev)
 		return -EBUSY;
 	}
 
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING
+	// wifi ssrmode check
+	if( 1 == wifissr &&
+		(!strncmp(name, "wcnss", 5) || !strncmp(name, "riva", 4))) {
+		restart_level = RESET_SUBSYS_INDEPENDENT;
+	} else {
+		restart_level = RESET_SOC;
+	}
+#endif
+
 	pr_info("Restart sequence requested for %s, restart_level = %d.\n",
 		name, restart_level);
 
@@ -505,9 +664,30 @@ int subsystem_restart_dev(struct subsys_device *dev)
 
 	case RESET_SUBSYS_COUPLED:
 	case RESET_SUBSYS_INDEPENDENT:
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING
+		if (!strncmp(name, "wcnss", 5) || !strncmp(name, "riva", 4)) {
+			ssr_noti_work = kmalloc(sizeof *ssr_noti_work, GFP_KERNEL);
+			INIT_WORK(&ssr_noti_work->work, excute_ssr_notification);
+			schedule_work( &ssr_noti_work->work );
+//			ssr_reset_count_func(dev);  // read, write ssr count rawdata
+		}
+#endif
 		__subsystem_restart_dev(dev);
 		break;
 	case RESET_SOC:
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING
+		if (!strncmp(name, "lpass", 5)) {
+			pantech_sys_reset_reason_set(SYS_RESET_REASON_LPASS);
+		} else if (!strncmp(name, "dsps", 4) || !strncmp(name, "adsp", 4)) {
+			pantech_sys_reset_reason_set(SYS_RESET_REASON_DSPS);
+		} else if (!strncmp(name, "wcnss", 5) || !strncmp(name, "riva", 4)) {
+			pantech_sys_reset_reason_set(SYS_RESET_REASON_RIVA);
+		} else if (!strncmp(name, "modem", 5)) {
+			pantech_sys_reset_reason_set(SYS_RESET_REASON_MODEM);
+		} else if(!strncmp(name, "external_modem", 14)) {
+			pantech_sys_reset_reason_set(SYS_RESET_REASON_MDM);
+		}
+#endif
 		panic("subsys-restart: Resetting the SoC - %s crashed.", name);
 		break;
 	default:

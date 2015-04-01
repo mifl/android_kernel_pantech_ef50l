@@ -502,4 +502,24 @@ config PANTECH_PS_WQE_COM_PREF_LOGGING
 	bool "PANTECH PS WQE COM PREF LOGGING"
 	default n
 
+##################################################################################
+# SECTION TO ADD NEW FEATURES
+##################################################################################
+
+config PANTECH_DYNAMIC_MINORS
+	bool
+	default y
+
+config PANTECH_LED_BLINK_CONTROL
+	bool
+	default y
+
+config PANTECH_VIBRATOR
+	bool
+	default y
+
+config PANTECH_APQ8064_KK_ECOMODE
+	bool
+	default y
+
 endif

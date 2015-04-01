@@ -12,6 +12,10 @@
 #include <linux/reboot.h>
 #include <linux/cpumask.h>
 
+#if defined(CONFIG_PANTECH_DEBUG)
+#include <mach/pantech_debug.h> 
+#endif
+
 /*
  * When the user hits Sys-Rq o to power down the machine this is the
  * callback we use.
@@ -19,7 +23,16 @@
 
 static void do_poweroff(struct work_struct *dummy)
 {
+#if defined(CONFIG_PANTECH_DEBUG)
+	if(pantech_debug_enable) {
+		panic("Restarting system with command 'sysrq'.\n");
+		return;
+	}
+	else
+		kernel_power_off();
+#else
 	kernel_power_off();
+#endif
 }
 
 static DECLARE_WORK(poweroff_work, do_poweroff);

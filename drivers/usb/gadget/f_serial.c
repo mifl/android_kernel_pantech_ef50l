@@ -28,6 +28,9 @@
  * if you can arrange appropriate host side drivers.
  */
 #define GSERIAL_NO_PORTS 3
+#ifdef CONFIG_PANTECH_ANDROID_FACTORY_MODE
+static int is_factory_mode=0;
+#endif
 
 struct f_gser {
 	struct gserial			port;
@@ -98,6 +101,28 @@ static inline struct f_gser *port_to_gser(struct gserial *p)
 /*-------------------------------------------------------------------------*/
 
 /* interface descriptor: */
+
+#ifdef CONFIG_PANTECH_ANDROID_USB
+static struct usb_interface_descriptor gser_acm_cdc_interface_desc = {
+	.bLength =		USB_DT_INTERFACE_SIZE,
+	.bDescriptorType =	USB_DT_INTERFACE,
+	.bNumEndpoints =	1,
+	.bInterfaceClass =	USB_CLASS_COMM,
+	.bInterfaceSubClass =	0x02,
+	.bInterfaceProtocol =	0x01,
+	.iInterface = 0,
+};
+
+static struct usb_interface_descriptor gser_acm_data_interface_desc = {
+	.bLength =		USB_DT_INTERFACE_SIZE,
+	.bDescriptorType =	USB_DT_INTERFACE,
+	.bNumEndpoints =	2,
+	.bInterfaceClass =	USB_CLASS_CDC_DATA,
+	.bInterfaceSubClass =	0,
+	.bInterfaceProtocol =	0,
+	.iInterface = 0,
+};	
+#endif
 
 static struct usb_interface_descriptor gser_interface_desc = {
 	.bLength =		USB_DT_INTERFACE_SIZE,
@@ -171,6 +196,16 @@ static struct usb_endpoint_descriptor gser_fs_out_desc = {
 	.bmAttributes =		USB_ENDPOINT_XFER_BULK,
 };
 
+#ifdef CONFIG_PANTECH_ANDROID_USB
+static struct usb_descriptor_header *pantech_gser_fs_function[] = {
+	(struct usb_descriptor_header *) &gser_acm_cdc_interface_desc,
+	(struct usb_descriptor_header *) &gser_fs_notify_desc,
+	(struct usb_descriptor_header *) &gser_acm_data_interface_desc,
+	(struct usb_descriptor_header *) &gser_fs_in_desc,
+	(struct usb_descriptor_header *) &gser_fs_out_desc,
+	NULL,
+};
+#endif
 static struct usb_descriptor_header *gser_fs_function[] = {
 	(struct usb_descriptor_header *) &gser_interface_desc,
 #ifdef CONFIG_MODEM_SUPPORT
@@ -211,6 +246,16 @@ static struct usb_endpoint_descriptor gser_hs_out_desc = {
 	.wMaxPacketSize =	__constant_cpu_to_le16(512),
 };
 
+#ifdef CONFIG_PANTECH_ANDROID_USB
+static struct usb_descriptor_header *pantech_gser_hs_function[] = {
+	(struct usb_descriptor_header *) &gser_acm_cdc_interface_desc,
+	(struct usb_descriptor_header *) &gser_hs_notify_desc,
+	(struct usb_descriptor_header *) &gser_acm_data_interface_desc,
+	(struct usb_descriptor_header *) &gser_hs_in_desc,
+	(struct usb_descriptor_header *) &gser_hs_out_desc,
+	NULL,
+};
+#endif
 static struct usb_descriptor_header *gser_hs_function[] = {
 	(struct usb_descriptor_header *) &gser_interface_desc,
 #ifdef CONFIG_MODEM_SUPPORT
@@ -538,8 +583,11 @@ static int gser_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 #endif
 
 	if (gser->port.in->driver_data) {
+#ifdef CONFIG_PANTECH_ANDROID_USB
+#else
 		DBG(cdev, "reset generic data ttyGS%d\n", gser->port_num);
 		gport_disconnect(gser);
+#endif		
 	}
 	if (!gser->port.in->desc || !gser->port.out->desc) {
 		DBG(cdev, "activate generic ttyGS%d\n", gser->port_num);
@@ -738,6 +786,10 @@ static int gser_send_modem_ctrl_bits(struct gserial *port, int ctrl_bits)
 	return gser_notify_serial_state(gser);
 }
 #endif
+
+#ifdef CONFIG_PANTECH_ANDROID_USB
+extern ushort getVendorID(void );
+#endif
 /*-------------------------------------------------------------------------*/
 
 /* serial function driver setup/binding */
@@ -749,13 +801,42 @@ gser_bind(struct usb_configuration *c, struct usb_function *f)
 	struct f_gser		*gser = func_to_gser(f);
 	int			status;
 	struct usb_ep		*ep;
+#ifdef CONFIG_PANTECH_ANDROID_USB
+	ushort vid;
+#endif
 
 	/* allocate instance-specific interface IDs */
+
+#ifdef CONFIG_PANTECH_ANDROID_USB
+	vid = getVendorID();
+	if (vid == 0x05C6) {
+		//printk("^^^^ It's Qualcomm gser\n");
+		status = usb_interface_id(c, f);
+		if (status < 0)
+			goto fail;
+		gser->data_id = status;
+		gser_interface_desc.bInterfaceNumber = status;
+	} else {
+		//printk("^^^^ It's SKY gser\n");
+		status = usb_interface_id(c, f);
+		if (status < 0)
+			goto fail;
+		gser->data_id = status; //data_id : cdc interface number
+		gser_acm_cdc_interface_desc.bInterfaceNumber = status;
+
+		//acm interface
+		status = usb_interface_id(c, f);
+		if (status < 0)
+			goto fail;
+		gser_acm_data_interface_desc.bInterfaceNumber = status;
+	}
+#else
 	status = usb_interface_id(c, f);
 	if (status < 0)
 		goto fail;
 	gser->data_id = status;
 	gser_interface_desc.bInterfaceNumber = status;
+#endif
 
 	status = -ENODEV;
 
@@ -790,7 +871,16 @@ gser_bind(struct usb_configuration *c, struct usb_function *f)
 #endif
 
 	/* copy descriptors, and track endpoint copies */
+#ifdef CONFIG_PANTECH_ANDROID_USB
+	vid = getVendorID();
+	if ( vid == 0x05C6) {
+		f->descriptors = usb_copy_descriptors(gser_fs_function);
+	} else {
+		f->descriptors = usb_copy_descriptors(pantech_gser_fs_function);
+	}
+#else
 	f->descriptors = usb_copy_descriptors(gser_fs_function);
+#endif
 
 	if (!f->descriptors)
 		goto fail;
@@ -810,7 +900,15 @@ gser_bind(struct usb_configuration *c, struct usb_function *f)
 #endif
 
 		/* copy descriptors, and track endpoint copies */
+#ifdef CONFIG_PANTECH_ANDROID_USB
+		if ( vid == 0x05C6) {
+			f->hs_descriptors = usb_copy_descriptors(gser_hs_function);
+		} else {
+			f->hs_descriptors = usb_copy_descriptors(pantech_gser_hs_function);
+		}
+#else
 		f->hs_descriptors = usb_copy_descriptors(gser_hs_function);
+#endif
 
 		if (!f->hs_descriptors)
 			goto fail;

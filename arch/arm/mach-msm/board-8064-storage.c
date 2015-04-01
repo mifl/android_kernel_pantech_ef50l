@@ -297,10 +297,15 @@ static struct mmc_platform_data sdc3_data = {
 	.sup_clk_cnt	= ARRAY_SIZE(sdc3_sup_clk_rates),
 	.pin_data	= &mmc_slot_pin_data[SDCC3],
 	.vreg_data	= &mmc_slot_vreg_data[SDCC3],
+#ifdef CONFIG_PANTECH_EXTERNAL_SDCARD
+	.status_gpio  = PM8921_GPIO_PM_TO_SYS(24),
+	.status_irq = PM8921_GPIO_IRQ(PM8921_IRQ_BASE, 24),
+#else
 	.wpswitch_gpio	= PM8921_GPIO_PM_TO_SYS(17),
 	.is_wpswitch_active_low = true,
 	.status_gpio	= 26,
 	.status_irq	= MSM_GPIO_TO_INT(26),
+#endif
 	.irq_flags	= IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING,
 	.is_status_gpio_active_low = 1,
 	.xpc_cap	= 1,

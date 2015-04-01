@@ -60,7 +60,6 @@ static int srs_alsa_ctrl_ever_called;
 #define INT_RX_VOL_MAX_STEPS 0x2000
 #define INT_RX_VOL_GAIN 0x2000
 #define INT_RX_LR_VOL_MAX_STEPS 0x20002000
-
 static int msm_route_fm_vol_control;
 static const DECLARE_TLV_DB_LINEAR(fm_rx_vol_gain, 0,
 			INT_RX_VOL_MAX_STEPS);
@@ -229,6 +228,19 @@ static struct msm_pcm_routing_fdai_data
 	{{0, INVALID_SESSION, {NULL, NULL} },
 	{0, INVALID_SESSION, {NULL, NULL} } },
 };
+
+
+#ifdef CONFIG_PANTECH_SND_QSOUND 
+int* get_fe_dsp_stream_ids(int index) {
+	if (index < 0 || index >= MSM_FRONTEND_DAI_MM_SIZE) return NULL;
+	return &fe_dai_map[index][0].strm_id;
+}
+
+struct msm_pcm_routing_bdai_data* get_be_entry(int index) {
+	if (index < 0 || index >= MSM_BACKEND_DAI_MAX) return NULL;
+	return &msm_bedais[index];
+}
+#endif
 
 static uint8_t is_be_dai_extproc(int be_dai)
 {
@@ -470,6 +482,7 @@ static void msm_pcm_routing_process_audio(u16 reg, u16 val, int set)
 		session_type = SESSION_TYPE_TX;
 		path_type = ADM_PATH_LIVE_REC;
 	}
+
 
 	mutex_lock(&routing_lock);
 

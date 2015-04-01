@@ -1036,6 +1036,16 @@ static int mtp_ctrlrequest(struct usb_composite_dev *cdev,
 				&& (w_index == 4 || w_index == 5)) {
 			value = (w_length < sizeof(mtp_ext_config_desc) ?
 					w_length : sizeof(mtp_ext_config_desc));
+
+#ifdef CONFIG_ANDROID_PANTECH_USB_CDFREE
+			printk(KERN_INFO "cdrom: %d interface: %d \n",
+			pantech_cdrom_enabled, mtp_ext_config_desc.function.bFirstInterfaceNumber);
+			if (pantech_cdrom_enabled) {
+				mtp_ext_config_desc.function.bFirstInterfaceNumber = 1;
+				printk(KERN_INFO "cdrom: %d interface: %d \n",
+				pantech_cdrom_enabled, mtp_ext_config_desc.function.bFirstInterfaceNumber);
+			}
+#endif
 			memcpy(cdev->req->buf, &mtp_ext_config_desc, value);
 		}
 	} else if ((ctrl->bRequestType & USB_TYPE_MASK) == USB_TYPE_CLASS) {

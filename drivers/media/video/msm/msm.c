@@ -1145,6 +1145,9 @@ static int msm_close(struct file *f)
 	if (pcam_inst->streamon) {
 		/*something went wrong since instance
 		is closing without streamoff*/
+#if	1//def F_PANTECH_CAMERA_DEADBEEF_ERROR_FIX
+		pr_err("msm_close: stream on is still there\n");
+#endif
 		if (pmctl->mctl_release)
 			pmctl->mctl_release(pmctl);
 		pmctl->mctl_release = NULL;/*so that it isn't closed again*/
@@ -1187,6 +1190,9 @@ static int msm_close(struct file *f)
 			pmctl->mctl_release(pmctl);
 			pmctl->mctl_release = NULL;
 		}
+#if	1//def F_PANTECH_CAMERA_DEADBEEF_ERROR_FIX
+        pmctl->mctl_cmd = NULL;
+#endif
 
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
 		kref_put(&pmctl->refcount, msm_release_ion_client);

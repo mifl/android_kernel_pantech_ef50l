@@ -89,6 +89,10 @@ static int mipi_dsi_off(struct platform_device *pdev)
 	else
 		down(&mfd->dma->mutex);
 
+#if defined(FEATURE_SKYDISP_DISPLAY_FLICKER_SHARP_IPS)
+	//printk(KERN_ERR "[SKY_LCD] %s : %d\n", __FUNCTION__, __LINE__);
+	ret = panel_next_off(pdev);
+#endif
 	if (mfd->panel_info.type == MIPI_CMD_PANEL) {
 		mipi_dsi_prepare_ahb_clocks();
 		mipi_dsi_ahb_ctrl(1);
@@ -114,7 +118,11 @@ static int mipi_dsi_off(struct platform_device *pdev)
 		}
 	}
 
+#if defined(FEATURE_SKYDISP_DISPLAY_FLICKER_SHARP_IPS) 
+	/* panel_next_off changed : set before mipi_clock/mode_config etc... */
+#else
 	ret = panel_next_off(pdev);
+#endif
 
 	spin_lock_bh(&dsi_clk_lock);
 

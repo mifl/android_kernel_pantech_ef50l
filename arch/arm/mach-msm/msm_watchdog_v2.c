@@ -469,6 +469,11 @@ static int __devinit msm_wdog_dt_to_pdata(struct platform_device *pdev,
 	return 0;
 }
 
+/* (+) p16652 - for watchdog debugging */
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING
+struct msm_watchdog_data *p_wdog_dd = NULL;
+#endif
+
 static int __devinit msm_watchdog_probe(struct platform_device *pdev)
 {
 	int ret;
@@ -479,6 +484,11 @@ static int __devinit msm_watchdog_probe(struct platform_device *pdev)
 	wdog_dd = kzalloc(sizeof(struct msm_watchdog_data), GFP_KERNEL);
 	if (!wdog_dd)
 		return -EIO;
+
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING    
+    p_wdog_dd = wdog_dd;
+#endif
+
 	ret = msm_wdog_dt_to_pdata(pdev, wdog_dd);
 	if (ret)
 		goto err;

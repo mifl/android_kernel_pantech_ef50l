@@ -142,4 +142,11 @@ int multi_ch_pcm_set_volume(unsigned volume);
 
 int compressed_set_volume(unsigned volume);
 
+#ifdef CONFIG_PANTECH_SND_QSOUND
+struct msm_pcm_routing_bdai_data;
+
+int* get_fe_dsp_stream_ids(int fe_index);
+struct msm_pcm_routing_bdai_data* get_be_entry(int be_index);
+#endif
+
 #endif /*_MSM_PCM_H*/

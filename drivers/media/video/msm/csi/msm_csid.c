@@ -21,6 +21,11 @@
 #include "msm.h"
 #include "msm_cam_server.h"
 
+#if 0 //psj_test
+#undef CDBG
+#define CDBG(fmt, args...) printk(KERN_INFO "msm_csid: " fmt, ##args)//pr_debug(fmt, ##args)
+#endif
+
 #define V4L2_IDENT_CSID                            50002
 #define CSID_VERSION_V2                      0x02000011
 #define CSID_VERSION_V3                      0x30000000
@@ -132,6 +137,9 @@ static int msm_csid_config(struct csid_device *csid_dev,
 static irqreturn_t msm_csid_irq(int irq_num, void *data)
 {
 	uint32_t irq;
+#ifdef CONFIG_PANTECH_CAMERA //#ifdef F_PANTECH_CAMERA_QPATCH_JPEG_ZSL
+	uint32_t unmapped_header; 
+#endif
 	struct csid_device *csid_dev = data;
 	if (!csid_dev||!csid_dev->base) {
 		pr_err("%s:%d csid_dev NULL\n", __func__, __LINE__);
@@ -140,6 +148,14 @@ static irqreturn_t msm_csid_irq(int irq_num, void *data)
 	irq = msm_camera_io_r(csid_dev->base + CSID_IRQ_STATUS_ADDR);
 	CDBG("%s CSID%d_IRQ_STATUS_ADDR = 0x%x\n",
 		 __func__, csid_dev->pdev->id, irq);
+	
+#ifdef CONFIG_PANTECH_CAMERA //#ifdef F_PANTECH_CAMERA_QPATCH_JPEG_ZSL
+       //if (irq & 0x08000000){ //CSID_CAPTURED_UNMAPPED_LONG_PKT_HDR_ADDR error 
+            unmapped_header = msm_camera_io_r(csid_dev->base + CSID_CAPTURED_UNMAPPED_LONG_PKT_HDR_ADDR); 
+            CDBG("%s CSID_CAPTURED_UNMAPPED_LONG_PKT_HDR_ADDR = 0x%x\n",__func__, unmapped_header); 
+       //} 
+#endif
+
 	if (irq & (0x1 << CSID_RST_DONE_IRQ_BITSHIFT))
 			complete(&csid_dev->reset_complete);
 	msm_camera_io_w(irq, csid_dev->base + CSID_IRQ_CLEAR_CMD_ADDR);

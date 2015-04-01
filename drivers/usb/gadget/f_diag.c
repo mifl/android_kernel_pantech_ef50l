@@ -39,6 +39,26 @@ static struct usb_interface_descriptor intf_desc = {
 	.bInterfaceProtocol =	0xFF,
 };
 
+#ifdef CONFIG_PANTECH_ANDROID_USB
+static struct usb_interface_descriptor intf_msm_desc = {
+	.bLength            =	sizeof intf_msm_desc,
+	.bDescriptorType    =	USB_DT_INTERFACE,
+	.bNumEndpoints      =	2,
+	.bInterfaceClass    =	0xFF,
+	.bInterfaceSubClass =	0xE0,
+	.bInterfaceProtocol =	0x20,
+};
+
+static struct usb_interface_descriptor intf_mdm_desc = {
+	.bLength            =	sizeof intf_mdm_desc,
+	.bDescriptorType    =	USB_DT_INTERFACE,
+	.bNumEndpoints      =	2,
+	.bInterfaceClass    =	0xFF,
+	.bInterfaceSubClass =	0xE0,
+	.bInterfaceProtocol =	0x30,
+};
+#endif
+
 static struct usb_endpoint_descriptor hs_bulk_in_desc = {
 	.bLength 			=	USB_DT_ENDPOINT_SIZE,
 	.bDescriptorType 	=	USB_DT_ENDPOINT,
@@ -74,12 +94,42 @@ static struct usb_endpoint_descriptor fs_bulk_out_desc = {
 	.bInterval        =	0,
 };
 
+#ifdef CONFIG_PANTECH_ANDROID_USB
+static struct usb_descriptor_header *fs_msm_diag_desc[] = {
+	(struct usb_descriptor_header *) &intf_msm_desc,
+	(struct usb_descriptor_header *) &fs_bulk_in_desc,
+	(struct usb_descriptor_header *) &fs_bulk_out_desc,
+	NULL,
+	};
+static struct usb_descriptor_header *fs_mdm_diag_desc[] = {
+	(struct usb_descriptor_header *) &intf_mdm_desc,
+	(struct usb_descriptor_header *) &fs_bulk_in_desc,
+	(struct usb_descriptor_header *) &fs_bulk_out_desc,
+	NULL,
+	};
+#endif
 static struct usb_descriptor_header *fs_diag_desc[] = {
 	(struct usb_descriptor_header *) &intf_desc,
 	(struct usb_descriptor_header *) &fs_bulk_in_desc,
 	(struct usb_descriptor_header *) &fs_bulk_out_desc,
 	NULL,
 	};
+
+
+#ifdef CONFIG_PANTECH_ANDROID_USB
+static struct usb_descriptor_header *hs_msm_diag_desc[] = {
+	(struct usb_descriptor_header *) &intf_msm_desc,
+	(struct usb_descriptor_header *) &hs_bulk_in_desc,
+	(struct usb_descriptor_header *) &hs_bulk_out_desc,
+	NULL,
+};
+static struct usb_descriptor_header *hs_mdm_diag_desc[] = {
+	(struct usb_descriptor_header *) &intf_mdm_desc,
+	(struct usb_descriptor_header *) &hs_bulk_in_desc,
+	(struct usb_descriptor_header *) &hs_bulk_out_desc,
+	NULL,
+};
+#endif
 static struct usb_descriptor_header *hs_diag_desc[] = {
 	(struct usb_descriptor_header *) &intf_desc,
 	(struct usb_descriptor_header *) &hs_bulk_in_desc,
@@ -571,6 +621,10 @@ static void diag_function_unbind(struct usb_configuration *c,
 	ctxt->ch.priv_usb = NULL;
 }
 
+#ifdef CONFIG_PANTECH_ANDROID_USB
+extern ushort getVendorID(void );
+#endif
+
 static int diag_function_bind(struct usb_configuration *c,
 		struct usb_function *f)
 {
@@ -579,7 +633,27 @@ static int diag_function_bind(struct usb_configuration *c,
 	struct usb_ep *ep;
 	int status = -ENODEV;
 
+
+#ifdef CONFIG_PANTECH_ANDROID_USB
+	ushort vid;
+
+	vid = getVendorID();
+	//printk("^^^^ diag bind current VID = %x", vid);
+
+	if (vid == 0x05C6) {
+		//printk("^^^^ It's Qualcomm diag\n");
+		intf_desc.bInterfaceNumber =  usb_interface_id(c, f);
+	} else {
+		//printk("^^^^ It's Sky diag\n");
+		if (!strcmp("diag", f->name)) {
+			intf_msm_desc.bInterfaceNumber =  usb_interface_id(c, f);
+		} else if (!strcmp("diag_mdm", f->name)) {
+			intf_mdm_desc.bInterfaceNumber =  usb_interface_id(c, f);
+		}
+	}
+#else
 	intf_desc.bInterfaceNumber =  usb_interface_id(c, f);
+#endif
 
 	ep = usb_ep_autoconfig(cdev->gadget, &fs_bulk_in_desc);
 	if (!ep)
@@ -594,7 +668,23 @@ static int diag_function_bind(struct usb_configuration *c,
 	ep->driver_data = ctxt;
 
 	/* copy descriptors, and track endpoint copies */
+#ifdef CONFIG_PANTECH_ANDROID_USB
+	if (vid == 0x05C6) {
+		//printk("^^^^ It's Qualcomm diag\n");
+		f->descriptors = usb_copy_descriptors(fs_diag_desc);
+	} else {
+		DBG(cdev, "^^^^ It's SKY diag\n");
+		if (!strcmp("diag", f->name)) {
+			//printk(" bind diag \n");
+			f->descriptors = usb_copy_descriptors(fs_msm_diag_desc);
+		} else if (!strcmp("diag_mdm", f->name)) {
+			//printk(" diag_mdm \n");
+			f->descriptors = usb_copy_descriptors(fs_mdm_diag_desc);
+		}
+	}
+#else
 	f->descriptors = usb_copy_descriptors(fs_diag_desc);
+#endif
 	if (!f->descriptors)
 		goto fail;
 
@@ -605,7 +695,24 @@ static int diag_function_bind(struct usb_configuration *c,
 				fs_bulk_out_desc.bEndpointAddress;
 
 		/* copy descriptors, and track endpoint copies */
+
+#ifdef CONFIG_PANTECH_ANDROID_USB
+		if (vid == 0x05C6) {
+			//printk("^^^^ It's Qualcomm diag\n");
+			f->hs_descriptors = usb_copy_descriptors(hs_diag_desc);
+		} else {
+			DBG(cdev, "^^^^ It's SKY diag\n");
+			if (!strcmp("diag", f->name)) {
+				//printk(" bind diag \n");
+				f->hs_descriptors = usb_copy_descriptors(hs_msm_diag_desc);
+			} else if(!strcmp("diag_mdm", f->name)) {
+				//printk(" diag_mdm \n");
+				f->hs_descriptors = usb_copy_descriptors(hs_mdm_diag_desc);
+			}
+		}
+#else
 		f->hs_descriptors = usb_copy_descriptors(hs_diag_desc);
+#endif
 	}
 	diag_update_pid_and_serial_num(ctxt);
 	return 0;
@@ -624,6 +731,9 @@ int diag_function_add(struct usb_configuration *c, const char *name,
 	struct diag_context *dev;
 	struct usb_diag_ch *_ch;
 	int found = 0, ret;
+#ifdef CONFIG_PANTECH_ANDROID_USB
+	ushort vid;
+#endif
 
 	DBG(c->cdev, "diag_function_add\n");
 
@@ -645,8 +755,35 @@ int diag_function_add(struct usb_configuration *c, const char *name,
 	dev->update_pid_and_serial_num = update_pid;
 	dev->cdev = c->cdev;
 	dev->function.name = _ch->name;
+#ifdef CONFIG_PANTECH_ANDROID_USB
+	vid = getVendorID();
+	if (vid == 0x05C6) {
+		//printk("^^^^ It's Qualcomm diag\n");
+		dev->function.descriptors = fs_diag_desc;
+	} else {
+		//printk("^^^^ It's SKY diag\n");
+		if (!strcmp("diag", _ch->name)) {
+			dev->function.descriptors = fs_msm_diag_desc;
+		} else if (!strcmp("diag_mdm", _ch->name)) {
+			dev->function.descriptors = fs_mdm_diag_desc;
+		}
+	}
+#else
 	dev->function.descriptors = fs_diag_desc;
+#endif
+#ifdef CONFIG_PANTECH_ANDROID_USB
+	if (vid == 0x05C6) {
+		dev->function.hs_descriptors = hs_diag_desc;
+	} else {
+		if (!strcmp("diag", _ch->name)){
+			dev->function.hs_descriptors = hs_msm_diag_desc;
+		} else if (!strcmp("diag_mdm", _ch->name)) {
+			dev->function.hs_descriptors = hs_mdm_diag_desc;
+		}
+	}
+#else
 	dev->function.hs_descriptors = hs_diag_desc;
+#endif
 	dev->function.bind = diag_function_bind;
 	dev->function.unbind = diag_function_unbind;
 	dev->function.set_alt = diag_function_set_alt;

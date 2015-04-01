@@ -134,7 +134,7 @@ void  mdp4_overlay_free_base_pipe(struct msm_fb_data_type *mfd)
 		else if (ctrl->panel_mode & MDP4_PANEL_LCDC)
 			mdp4_lcdc_free_base_pipe(mfd);
 	} else if (hdmi_prim_display || mfd->index == 1) {
-		mdp4_dtv_free_base_pipe(mfd);
+		//mdp4_dtv_free_base_pipe(mfd);
 	}
 }
 
@@ -958,6 +958,27 @@ static void mdp4_overlay_vg_get_src_offset(struct mdp4_overlay_pipe *pipe,
 	}
 }
 
+#ifdef CONFIG_PANTECH_LCD_SHARPNESS_CTRL
+unsigned int sharpness_count = 0;
+void sharpness_control(struct msm_fb_data_type *mfd, int count)
+{
+	sharpness_count = count;
+	pr_debug("[kkCHO_DEBUG] *************** count = %d\n",count);
+}
+
+uint32_t ps_table_value(int8_t value)
+{
+	uint32_t out = 0x0;
+	int8_t level = value;
+	uint32_t mask = 0xffffffff;
+	out = 0x88888888;
+
+	out += (0x11111111 * level);
+	out &= mask;
+
+	return out;
+}
+#endif
 void mdp4_overlay_vg_setup(struct mdp4_overlay_pipe *pipe)
 {
 	char *vg_base;
@@ -1092,6 +1113,20 @@ void mdp4_overlay_vg_setup(struct mdp4_overlay_pipe *pipe)
 		outpdw(vg_base + 0x0068,
 			pipe->r_bit << 4 | pipe->b_bit << 2 | pipe->g_bit);
 	}
+
+#ifdef CONFIG_PANTECH_LCD_SHARPNESS_CTRL
+	if (sharpness_count >= 1)
+	{
+		pr_debug("[kkCHO_DEBUG] + sharpness_count_set *************** sharpness_count = %d\n",sharpness_count);
+		outpdw(vg_base + 0x8200, ps_table_value(sharpness_count));
+		outpdw(vg_base + 0x8204, ps_table_value(sharpness_count));	
+		pr_debug("[kkCHO_DEBUG] - sharpness_count_set *************** sharpness_count = %d\n",sharpness_count);
+	}
+	else{
+		outpdw(vg_base + 0x8200, 0);
+		outpdw(vg_base + 0x8204, 0);	
+	}
+#endif
 
 	if (mdp_rev > MDP_REV_41) {
 		/* mdp chip select controller */
@@ -2870,7 +2905,11 @@ static int mdp4_calc_req_mdp_clk(struct msm_fb_data_type *mfd,
 	    (src_h != dst_h) &&
 	    (mfd->panel_info.lcdc.v_back_porch)) {
 		u32 clk = 0;
+#ifdef CONFIG_F_SKYDISP_UPSCALING_UNDERRUN
+		clk = 6 * (pclk >> shift) / mfd->panel_info.lcdc.v_back_porch;
+#else		
 		clk = 4 * (pclk >> shift) / mfd->panel_info.lcdc.v_back_porch;
+#endif		
 		clk <<= shift;
 		pr_debug("%s: mdp clk rate %d based on low vbp %d\n",
 			 __func__, clk, mfd->panel_info.lcdc.v_back_porch);
@@ -3661,7 +3700,7 @@ int mdp4_overlay_unset(struct fb_info *info, int ndx)
 			if (hdmi_prim_display)
 				fill_black_screen(TRUE, pipe->pipe_num,
 					pipe->mixer_num);
-			mdp4_overlay_dtv_unset(mfd, pipe);
+			//mdp4_overlay_dtv_unset(mfd, pipe);
 		}
 	}
 
@@ -3686,7 +3725,7 @@ int mdp4_overlay_wait4vsync(struct fb_info *info)
 		else if (ctrl->panel_mode & MDP4_PANEL_LCDC)
 			mdp4_lcdc_wait4vsync(0);
 	} else if (hdmi_prim_display || info->node == 1) {
-		mdp4_dtv_wait4vsync(0);
+		//mdp4_dtv_wait4vsync(0);
 	}
 
 	return 0;
@@ -3715,8 +3754,8 @@ int mdp4_overlay_vsync_ctrl(struct fb_info *info, int enable)
 			mdp4_dsi_cmd_vsync_ctrl(info, cmd);
 		else if (ctrl->panel_mode & MDP4_PANEL_LCDC)
 			mdp4_lcdc_vsync_ctrl(info, cmd);
-	} else if (hdmi_prim_display || info->node == 1)
-		mdp4_dtv_vsync_ctrl(info, cmd);
+	} //else if (hdmi_prim_display || info->node == 1)
+		//mdp4_dtv_vsync_ctrl(info, cmd);
 
 	return 0;
 }

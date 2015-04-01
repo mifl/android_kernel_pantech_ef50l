@@ -57,6 +57,11 @@
 #include <mach/event_timer.h>
 #include <linux/cpu_pm.h>
 
+#if defined(CONFIG_PANTECH_DEBUG)
+#ifdef CONFIG_PANTECH_DEBUG_SCHED_LOG  //p14291_121102
+#include <mach/pantech_debug.h> 
+#endif
+#endif
 /******************************************************************************
  * Debug Definitions
  *****************************************************************************/
@@ -78,6 +83,11 @@ module_param_named(
 	debug_mask, msm_pm_debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP
 );
 static int msm_pm_retention_tz_call;
+#if defined(CONFIG_PANTECH_DEBUG) 
+#ifdef CONFIG_PANTECH_DEBUG_SCHED_LOG  //p14291_121102
+static int debug_power_collaspe_status[4] = {0};
+#endif
+#endif
 
 /******************************************************************************
  * Sleep Modes and Parameters
@@ -556,6 +566,12 @@ static bool __ref msm_pm_spm_power_collapse(
 #ifdef CONFIG_VFP
 	vfp_pm_suspend();
 #endif
+#if defined(CONFIG_PANTECH_DEBUG) 
+#ifdef CONFIG_PANTECH_DEBUG_SCHED_LOG  //p14291_121102
+	debug_power_collaspe_status[smp_processor_id()] = (from_idle<<8)|(notify_rpm<<4)|1;
+	pantechdbg_sched_msg("+pc(I:%d,R:%d)", from_idle, notify_rpm);
+#endif
+#endif
 	collapsed = msm_pm_l2x0_power_collapse();
 
 	msm_pm_boot_config_after_pc(cpu);
@@ -571,7 +587,12 @@ static bool __ref msm_pm_spm_power_collapse(
 		mb();
 		local_fiq_enable();
 	}
-
+#if defined(CONFIG_PANTECH_DEBUG) && !defined(CONFIG_PANTECH_USER_BUILD)
+#ifdef CONFIG_PANTECH_DEBUG_SCHED_LOG  //p14291_121102
+		pantechdbg_sched_msg("-pc(%d)", collapsed);
+		debug_power_collaspe_status[smp_processor_id()] = 0;
+#endif
+#endif
 	if (MSM_PM_DEBUG_POWER_COLLAPSE & msm_pm_debug_mask)
 		pr_info("CPU%u: %s: msm_pm_collapse returned, collapsed %d\n",
 			cpu, __func__, collapsed);

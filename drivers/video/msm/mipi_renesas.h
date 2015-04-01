@@ -14,6 +14,29 @@
 #define MIPI_RENESAS_H
 
 #define RENESAS_FWVGA_TWO_LANE
+#define LCD_BL_MAX 16
+
+/*20121212, kkcho, 
+   Bug : [Non-periodic]No light at call-alert 
+   Fix  : added NOP befor cabc_set
+*/
+//#define FEATURE_RENESAS_CABC_BUG_FIX 
+
+/*20121214, kkcho
+   Bug : powermanagement problem when Power -key ON/OFF (push!push!)
+   Fix : BL_pin ctrl changed
+   Code : PowerMangerService.java(US, Park hou jae), mipi_renesas.c, board-8064_display.c
+*/
+//#define FEATURE_RENESAS_BL_CTRL_CHG
+#define FEATURE_RENESAS_BL_ON_DEBUG
+
+//#define LCD_USED_MPIP_860MBPS
+//#define LCD_USED_MPIP_872MBPS
+//#define LCD_USED_MPIP_875MBPS
+//#define LCD_USED_MPIP_870MBPS
+//#define LCD_USED_MPIP_940MBPS
+#define LCD_USED_MPIP_880MBPS
+//#define LCD_USED_MPIP_988MBPS
 
 int mipi_renesas_device_register(struct msm_panel_info *pinfo,
 					u32 channel, u32 panel);

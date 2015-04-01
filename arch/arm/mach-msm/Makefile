@@ -307,6 +307,15 @@ obj-$(CONFIG_MACH_MSM8930_EVT) += board-8930-all.o board-8930-regulator-pm8038.o
 obj-$(CONFIG_PM8921_BMS) += bms-batterydata.o bms-batterydata-desay.o batterydata-lib.o
 obj-$(CONFIG_MACH_APQ8064_CDP) += board-8064-all.o $(BOARD_REGULATOR_OBJ_NAME)
 obj-$(CONFIG_MACH_APQ8064_MTP) += board-8064-all.o $(BOARD_REGULATOR_OBJ_NAME)
+obj-$(CONFIG_MACH_APQ8064_EF48S) += board-8064-all.o $(BOARD_REGULATOR_OBJ_NAME)
+obj-$(CONFIG_MACH_APQ8064_EF49K) += board-8064-all.o $(BOARD_REGULATOR_OBJ_NAME)
+obj-$(CONFIG_MACH_APQ8064_EF50L) += board-8064-all.o $(BOARD_REGULATOR_OBJ_NAME)
+obj-$(CONFIG_MACH_APQ8064_EF51S) += board-8064-all.o $(BOARD_REGULATOR_OBJ_NAME)
+obj-$(CONFIG_MACH_APQ8064_EF51K) += board-8064-all.o $(BOARD_REGULATOR_OBJ_NAME)
+obj-$(CONFIG_MACH_APQ8064_EF51L) += board-8064-all.o $(BOARD_REGULATOR_OBJ_NAME)
+obj-$(CONFIG_MACH_APQ8064_EF52S) += board-8064-all.o $(BOARD_REGULATOR_OBJ_NAME)
+obj-$(CONFIG_MACH_APQ8064_EF52K) += board-8064-all.o $(BOARD_REGULATOR_OBJ_NAME)
+obj-$(CONFIG_MACH_APQ8064_EF52L) += board-8064-all.o $(BOARD_REGULATOR_OBJ_NAME)
 obj-$(CONFIG_MACH_APQ8064_LIQUID) += board-8064-all.o $(BOARD_REGULATOR_OBJ_NAME)
 obj-$(CONFIG_MACH_MPQ8064_HRD) += board-8064-all.o $(BOARD_REGULATOR_OBJ_NAME)
 obj-$(CONFIG_MACH_MPQ8064_DTV) += board-8064-all.o $(BOARD_REGULATOR_OBJ_NAME)
@@ -416,3 +425,5 @@ endif
 obj-$(CONFIG_MSM_CPU_PWRCTL) +=  msm_cpu_pwrctl.o
 
 obj-$(CONFIG_ARCH_RANDOM) += early_random.o
+
+obj-$(CONFIG_PANTECH_ERR_CRASH_LOGGING) += pantech_sys.o pantech_restart.o pantech_apanic.o pantech_debug.o

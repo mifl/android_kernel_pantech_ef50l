@@ -37,6 +37,12 @@
 #include <mach/rpm-smd.h>
 #include "rpm-notifier.h"
 
+#if defined(CONFIG_PANTECH_DEBUG)
+#if defined(CONFIG_PANTECH_DEBUG_RPM_LOG)
+#include <mach/pantech_debug.h> //p14291_pantech_dbg
+#endif
+#endif
+
 /* Debug Definitions */
 
 enum {
@@ -728,6 +734,13 @@ static int msm_rpm_send_data(struct msm_rpm_request *cdata,
 	    & (MSM_RPM_LOG_REQUEST_PRETTY | MSM_RPM_LOG_REQUEST_RAW))
 		msm_rpm_log_request(cdata);
 
+#if defined(CONFIG_PANTECH_DEBUG)
+#if defined(CONFIG_PANTECH_DEBUG_RPM_LOG) //p14291_121102
+	if(pantech_debug_enable)
+		pantech_debug_rpm_req_log((void*)cdata); 
+#endif
+#endif
+
 	if (standalone) {
 		for (i = 0; (i < cdata->write_idx); i++)
 			cdata->kvp[i].valid = false;
@@ -813,6 +826,14 @@ int msm_rpm_wait_for_ack(uint32_t msg_id)
 
 	wait_for_completion(&elem->ack);
 	msm_rpm_free_list_entry(elem);
+
+#if defined(CONFIG_PANTECH_DEBUG)
+#if defined(CONFIG_PANTECH_DEBUG_RPM_LOG) //p14291_121102
+	if(pantech_debug_enable)
+		pantech_debug_rpm_ack_log(msg_id, rc);
+#endif
+#endif
+
 	return elem->errno;
 }
 EXPORT_SYMBOL(msm_rpm_wait_for_ack);
@@ -866,6 +887,14 @@ int msm_rpm_wait_for_ack_noirq(uint32_t msg_id)
 
 	rc = elem->errno;
 	msm_rpm_free_list_entry(elem);
+
+#if defined(CONFIG_PANTECH_DEBUG)
+#if defined(CONFIG_PANTECH_DEBUG_RPM_LOG) //p14291_121102
+	if(pantech_debug_enable)
+		pantech_debug_rpm_ack_log(msg_id, rc); 
+#endif
+#endif
+
 wait_ack_cleanup:
 	irq_process = false;
 	spin_unlock_irqrestore(&msm_rpm_data.smd_lock_read, flags);

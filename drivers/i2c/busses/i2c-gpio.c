@@ -176,6 +176,14 @@ static int __devinit i2c_gpio_probe(struct platform_device *pdev)
 	else
 		bit_data->udelay = 5;			/* 100 kHz */
 
+#ifdef CONFIG_SKY_DMB_I2C_GPIO
+	if ((pdev->id == 12) /*&& (pdata->sda_pin==53)*/)
+	{
+		bit_data->udelay = 0;
+		//pr_info("TDMB I2C[%d] [%d]",pdev->id,bit_data->udelay);
+	}
+#endif
+
 	if (pdata->timeout)
 		bit_data->timeout = pdata->timeout;
 	else

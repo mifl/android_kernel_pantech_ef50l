@@ -27,6 +27,14 @@
 #include <mach/peripheral-loader.h>
 #include "smd_private.h"
 #include "ramdump.h"
+// p15060
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING
+#include <mach/pantech_sys.h>
+#endif
+
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING
+extern int wifissr;
+#endif
 
 #define MODULE_NAME			"wcnss_8960"
 #define MAX_BUF_SIZE			0x51
@@ -61,8 +69,18 @@ static void smsm_state_cb_hdlr(void *data, uint32_t old_state,
 		return;
 	}
 
+// p15060
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING
+	if (!enable_riva_ssr) {
+		if (1 != wifissr) {
+			pantech_sys_reset_reason_set(SYS_RESET_REASON_RIVA);
+			panic(MODULE_NAME ": SMSM reset request received from Riva");
+		}
+	}
+#else
 	if (!enable_riva_ssr)
 		panic(MODULE_NAME ": SMSM reset request received from Riva");
+#endif
 
 	smem_reset_reason = smem_get_entry(SMEM_SSR_REASON_WCNSS0,
 			&smem_reset_size);
@@ -98,8 +116,18 @@ static irqreturn_t riva_wdog_bite_irq_hdlr(int irq, void *dev_id)
 		return IRQ_HANDLED;
 	}
 
+// p15060
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING
+	if (!enable_riva_ssr) {
+		if (1 != wifissr) {
+			pantech_sys_reset_reason_set(SYS_RESET_REASON_RIVA);
+			panic(MODULE_NAME ": Watchdog bite received from Riva");
+		}
+	}
+#else
 	if (!enable_riva_ssr)
 		panic(MODULE_NAME ": Watchdog bite received from Riva");
+#endif
 
 	ss_restart_inprogress = true;
 	subsystem_restart_dev(riva_8960_dev);

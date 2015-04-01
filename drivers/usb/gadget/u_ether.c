@@ -48,6 +48,12 @@
 
 static struct workqueue_struct	*uether_wq;
 
+#define FEATURE_PANTECH_RNDIS_MAC_ADDR_FIX
+#ifdef FEATURE_PANTECH_RNDIS_MAC_ADDR_FIX
+static u8 *temp_dev_addr;
+static u8 *temp_host_addr;
+#endif
+
 struct eth_dev {
 	/* lock is held while accessing port_usb
 	 * or updating its backlink port_usb->ioport
@@ -1013,6 +1019,24 @@ int gether_setup_name(struct usb_gadget *g, u8 ethaddr[ETH_ALEN],
 	else
 		dev_warn(&g->dev, "using previous %s ethernet address\n", "host");
 
+#ifdef FEATURE_PANTECH_RNDIS_MAC_ADDR_FIX
+	if (!temp_dev_addr) {
+		temp_dev_addr = kzalloc(ETH_ALEN, GFP_KERNEL);
+		memcpy(temp_dev_addr, net->dev_addr, ETH_ALEN);
+	}
+
+	if (!temp_host_addr) {
+		temp_host_addr = kzalloc(ETH_ALEN, GFP_KERNEL);
+		memcpy(temp_host_addr, dev->host_mac, ETH_ALEN);
+	}
+
+	if (temp_dev_addr)
+		memcpy(net->dev_addr, temp_dev_addr, ETH_ALEN);
+
+	if (temp_host_addr)
+		memcpy(dev->host_mac, ethaddr, ETH_ALEN);
+#endif
+	
 	if (ethaddr)
 		memcpy(ethaddr, dev->host_mac, ETH_ALEN);
 

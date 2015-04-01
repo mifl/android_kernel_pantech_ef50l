@@ -58,6 +58,43 @@ mpath=`dirname $$mdpath`; rm -rf $$mpath;\
 fi
 endef
 
+# 20131223 LS1-p13795 modified for exFAT file system
+ifeq ($(PANTECH_SDXC_EXFAT_FS),true)
+ifeq ($(PANTECH_SDXC_EXFAT_BUILD),true)
+define exfat-module
+if test -e kheaders*.tar.bz2;then\
+rm -rf kheaders*.tar.bz2;\
+fi
+if test -e tuxera-exfat-*-apq8064*.tgz;then\
+rm -rf tuxera_exfat_hash;\
+rm -rf tuxera-exfat-*-apq8064*.tgz;\
+rm -rf tuxera-exfat-*-apq8064*;\
+fi
+if test -e tuxera-exfat-*-msm8974*.tgz;then\
+rm -rf tuxera_exfat_hash;\
+rm -rf tuxera-exfat-*-msm8974*.tgz;\
+rm -rf tuxera-exfat-*-msm8974*;\
+fi
+./tuxera_update.sh --source-dir $(TOP)/kernel --output-dir $(KERNEL_OUT) -a --target target/pantech.d/apq8064 --user pantech --pass feke57aze93ni --use-cache --cache-dir $(TOP)/tuxera_exfat_hash
+tar -xvzf tuxera-exfat-*-apq8064*.tgz
+cp tuxera-exfat-*-apq8064*/exfat/kernel-module/texfat.ko $(KERNEL_MODULES_OUT)
+mdpath=`find $(TARGET_OUT) -type d -name bin`;\
+if [ "$$mdpath" == "" ];then\
+mkdir -p $(TARGET_OUT)/bin;\
+fi
+cp tuxera-exfat-*-apq8064*/exfat/tools/* $(TARGET_OUT)/bin
+endef
+else
+define exfat-module
+cp tuxera-exfat-*-apq8064*/exfat/kernel-module/texfat.ko $(KERNEL_MODULES_OUT)
+cp tuxera-exfat-*-apq8064*/exfat/tools/* $(TARGET_OUT)/bin
+endef
+endif
+else
+define exfat-module
+endef
+endif
+
 $(KERNEL_OUT):
 	mkdir -p $(KERNEL_OUT)
 
@@ -74,6 +111,7 @@ $(TARGET_PREBUILT_INT_KERNEL): $(KERNEL_OUT) $(KERNEL_CONFIG) $(KERNEL_HEADERS_I
 	$(mv-modules)
 	$(clean-module-folder)
 	$(append-dtb)
+	$(exfat-module)
 
 $(KERNEL_HEADERS_INSTALL): $(KERNEL_OUT) $(KERNEL_CONFIG)
 	$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=arm CROSS_COMPILE=arm-eabi- headers_install

@@ -41,6 +41,10 @@
 #include <sound/apr_audio.h>
 #include <sound/q6asm.h>
 
+#ifdef CONFIG_PANTECH_SND_QSOUND
+static void* mqfx_get_rsp_ptr = 0;
+#endif
+
 
 #define TRUE        0x01
 #define FALSE       0x00
@@ -995,6 +999,24 @@ static int32_t q6asm_callback(struct apr_client_data *data, void *priv)
 		break;
 	}
 	case ASM_STREAM_CMDRSP_GET_PP_PARAMS:
+#ifdef CONFIG_PANTECH_SND_QSOUND
+		if (payload[0]==0) {
+			struct asm_pp_param_data_hdr * param_data = (struct asm_pp_param_data_hdr *)(payload+1);
+			pr_err("ASM_STREAM_CMDRSP_GET_PP_PARAMS_V2: module = 0x%x, param = 0x%x, size = %d\n",
+				param_data->module_id, param_data->param_id, param_data->param_size);
+			if ((param_data->module_id&0xfffff000)==0x1000c000) {
+				// is qsound module
+				memcpy(mqfx_get_rsp_ptr, param_data+1, param_data->param_size-sizeof(struct asm_pp_param_data_hdr ));
+				if (atomic_read(&ac->cmd_state)) {
+					atomic_set(&ac->cmd_state, 0);
+					wake_up(&ac->cmd_wait);
+				}
+				break;
+			}
+			else {
+			}
+		}
+#endif
 		rtac_make_asm_callback(ac->session, payload,
 			data->payload_size);
 		break;
@@ -3346,6 +3368,121 @@ fail_cmd:
 	kfree(vol_cmd);
 	return rc;
 }
+
+#ifdef CONFIG_PANTECH_SND_QSOUND
+struct asm_set_mqfx_params {
+	struct asm_pp_params_command param;
+	char mqfx_params[256];
+};
+
+int q6asm_set_mqfx_param(int session_id, uint32_t module_id, uint32_t param_id, const void* params, size_t size)
+{
+	struct audio_client *ac;
+	struct asm_set_mqfx_params cmd;
+	int sz = 0;
+	int rc = 0;
+
+	ac = q6asm_get_audio_client(session_id);
+	if (ac == NULL) {
+		pr_err("%s: Could not get audio client for session\n", __func__);
+		rc = -EINVAL;
+		goto fail_cmd;
+	}
+
+	pr_debug("###>>> %s, module_id:0x%08x, param_id:0x%08x, size:%d\n", __func__ ,module_id, param_id, size);
+
+	cmd.param.params.param_size = (size+3)&0xfffffffc;
+	cmd.param.params.module_id = module_id;
+	cmd.param.params.param_id = param_id;
+	cmd.param.params.reserved = 0;
+	memcpy(cmd.mqfx_params, params, size);
+	
+	sz = sizeof(cmd.param) + cmd.param.params.param_size;
+
+	q6asm_add_hdr_async(ac, &cmd.param.hdr, sz, TRUE);
+	cmd.param.hdr.opcode = ASM_STREAM_CMD_SET_PP_PARAMS;
+	cmd.param.payload = NULL;
+	cmd.param.payload_size = sizeof(struct  asm_pp_param_data_hdr) + cmd.param.params.param_size;
+
+	rc = apr_send_pkt(ac->apr, (uint32_t *) &cmd);
+	if (rc < 0) {
+		pr_err("%s: apr_send_pkt failed: module_id = 0x%x, param_id = 0x%x\n", __func__,
+						cmd.param.params.module_id, cmd.param.params.param_id);
+		rc = -EINVAL;
+		goto fail_cmd;
+	}
+
+	rc = wait_event_timeout(ac->cmd_wait,
+			(atomic_read(&ac->cmd_state) == 0), 5*HZ);
+	if (!rc) {
+		pr_err("%s: timeout, set-params: module_id = 0x%x, param_id = 0x%x\n", __func__,
+						cmd.param.params.module_id, cmd.param.params.param_id);
+		rc = -EINVAL;
+		goto fail_cmd;
+	}
+	rc = 0;
+fail_cmd:
+	return rc;
+}
+
+int q6asm_get_mqfx_param(int session_id, uint32_t module_id, uint32_t param_id, void* params, size_t size)
+{
+    int rc = 0;
+    int sz = 0;
+    struct asm_pp_params_command *cmd;
+	struct audio_client *ac;
+    
+	size = (size+3)&0xfffffffc; // round up
+
+    sz = sizeof(struct asm_pp_params_command) + size;
+	cmd = (struct asm_pp_params_command *) kzalloc(sz, GFP_KERNEL);
+	if (cmd == NULL) {
+		pr_err("%s: Mem alloc failed for %d bytes\n", __func__, sz);
+		rc = -EINVAL;
+		goto fail_cmd;
+	}
+
+	ac = q6asm_get_audio_client(session_id);
+	if (ac == NULL) {
+		pr_err("%s: Could not get audio client for session\n", __func__);
+		rc = -EINVAL;
+		goto fail_cmd;
+	}
+
+    q6asm_add_hdr_async(ac, &cmd->hdr, sizeof(cmd), TRUE);
+    cmd->hdr.opcode = ASM_STREAM_CMD_GET_PP_PARAMS;
+	cmd->payload           = 0;
+	cmd->payload_size      = sizeof(cmd->params) + size;
+	cmd->params.module_id  = module_id;
+    cmd->params.param_id   = param_id;
+    cmd->params.param_size = size;
+    cmd->params.reserved   = 0;
+
+	// testing. todo : remove the patch in q6asm_callback().
+    mqfx_get_rsp_ptr = params;
+
+    rc = apr_send_pkt(ac->apr, (uint32_t*)&cmd);
+    if (rc < 0) {
+        pr_err("%s: get_pp_params command failed\n", __func__);
+        rc = -EINVAL;
+        goto fail_cmd;
+    }
+
+    rc = wait_event_timeout(ac->cmd_wait,
+            (atomic_read(&ac->cmd_state) == 0), 5*HZ);
+    if (!rc) {
+        pr_err("%s: timeout in sending get_pp_params command to apr\n", __func__);
+        rc = -EINVAL;
+        goto fail_cmd;
+    }
+	// copy payload to arguments here:
+	memcpy(params, cmd+1, size);
+    rc = 0;
+fail_cmd:
+	kfree(cmd);
+    return rc;
+}
+#endif // CONFIG_PANTECH_SND_QSOUND
 
 int q6asm_equalizer(struct audio_client *ac, void *eq)
 {

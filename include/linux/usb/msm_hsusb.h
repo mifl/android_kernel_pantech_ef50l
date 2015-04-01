@@ -41,6 +41,10 @@
 #define MSM_INTERNAL_MEM		BIT(10)
 #define MSM_VENDOR_ID			BIT(16)
 
+#ifdef CONFIG_ANDROID_PANTECH_USB_OTG_INTENT
+#include <linux/switch.h>
+#endif /* CONFIG_ANDROID_PANTECH_USB_OTG_INTENT */
+
 /**
  * Supported USB modes
  *
@@ -217,6 +221,10 @@ struct msm_otg_platform_data {
 	bool core_clk_always_on_workaround;
 	struct msm_bus_scale_pdata *bus_scale_table;
 	const char *mhl_dev_name;
+#ifdef CONFIG_PANTECH_ANDROID_OTG
+	int (*control_usb_switch)(int gpio, int value);
+	bool pmic_id_status;
+#endif /* CONFIG_PANTECH_ANDROID_OTG */
 };
 
 /* Timeout (in msec) values (min - max) associated with OTG timers */
@@ -369,6 +377,10 @@ struct msm_otg {
 	u8 active_tmout;
 	struct hrtimer timer;
 	enum usb_vdd_type vdd_type;
+#ifdef CONFIG_ANDROID_PANTECH_USB_OTG_INTENT
+	struct switch_dev sdev_otg;
+	struct switch_dev sdev_otg_dev;
+#endif /* CONFIG_ANDROID_PANTECH_USB_OTG_INTENT */
 };
 
 struct msm_hsic_host_platform_data {

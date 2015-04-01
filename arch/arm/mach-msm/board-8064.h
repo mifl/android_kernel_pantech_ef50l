@@ -50,13 +50,16 @@ extern int msm8064_pm8917_regulator_pdata_len __devinitdata;
 #define GPIO_VREG_ID_EXT_TS_SW		2
 #define GPIO_VREG_ID_EXT_MPP8		3
 
-#define GPIO_VREG_ID_AVC_1P2V		0
-#define GPIO_VREG_ID_AVC_1P8V		1
-#define GPIO_VREG_ID_AVC_2P2V		2
-#define GPIO_VREG_ID_AVC_5V		3
-#define GPIO_VREG_ID_AVC_3P3V		4
+#define GPIO_VREG_ID_FRC_5V		0
+#define GPIO_VREG_ID_AVC_1P2V		1
+#define GPIO_VREG_ID_AVC_1P8V		2
+#define GPIO_VREG_ID_AVC_2P2V		3
+#define GPIO_VREG_ID_AVC_5V		4
+#define GPIO_VREG_ID_AVC_3P3V		5
 
+#if (CONFIG_BOARD_VER <= CONFIG_PT10)
 #define APQ8064_EXT_3P3V_REG_EN_GPIO	77
+#endif
 
 extern struct gpio_regulator_platform_data
 	apq8064_gpio_regulator_pdata[] __devinitdata;
@@ -91,6 +94,20 @@ void apq8064_init_cam(void);
 #define APQ_8064_GSBI3_QUP_I2C_BUS_ID 3
 #define APQ_8064_GSBI4_QUP_I2C_BUS_ID 4
 #define APQ_8064_GSBI5_QUP_I2C_BUS_ID 5
+#if defined(CONFIG_PANTECH_MAX17058_FG)
+#define APQ_8064_MAX17058_I2C_BUS_ID	9
+#endif
+#if defined(CONFIG_PANTECH_SMB347_CHARGER)
+#define APQ_8064_SMB347_I2C_BUS_ID	10
+#endif
+#if defined(CONFIG_SKY_SND_EXTERNAL_AMP) //YDA165
+#if ( ( defined(CONFIG_SKY_EF51S_BOARD) || defined(CONFIG_SKY_EF51K_BOARD) || defined(CONFIG_SKY_EF51L_BOARD) ) && (CONFIG_BOARD_VER > CONFIG_WS10) ) || \
+	defined(CONFIG_SKY_EF52S_BOARD) || defined(CONFIG_SKY_EF52K_BOARD) || defined(CONFIG_SKY_EF52L_BOARD) || defined(CONFIG_SKY_EF52W_BOARD)
+#define APQ_8960_GSBI7_QUP_I2C_BUS_ID 22
+#else
+#define APQ_8960_GSBI7_QUP_I2C_BUS_ID 22	// Jimmy, AUDIO_I2C
+#endif
+#endif /* CONFIG_SKY_SND_EXTERNAL_AMP */
 
 unsigned char apq8064_hdmi_as_primary_selected(void);
 unsigned char apq8064_mhl_display_enabled(void);

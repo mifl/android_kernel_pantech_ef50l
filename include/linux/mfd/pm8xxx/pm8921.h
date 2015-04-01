@@ -30,6 +30,9 @@
 #include <linux/input/pmic8xxx-keypad.h>
 #include <linux/regulator/pm8xxx-regulator.h>
 #include <linux/mfd/pm8xxx/pm8921-charger.h>
+#if defined (CONFIG_PANTECH_SMB347_CHARGER)
+#include <linux/mfd/pm8xxx/smb347_charger.h>
+#endif
 #include <linux/mfd/pm8xxx/pm8xxx-adc.h>
 #include <linux/mfd/pm8xxx/pm8921-bms.h>
 #include <linux/leds-pm8xxx.h>

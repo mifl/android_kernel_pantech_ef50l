@@ -29,6 +29,9 @@
 #include <linux/suspend.h>
 #include <mach/socinfo.h>
 #include <mach/cpufreq.h>
+#if defined(CONFIG_PANTECH_DEBUG)
+#include <mach/pantech_debug.h>
+#endif
 
 #include "acpuclock.h"
 
@@ -97,6 +100,16 @@ static int set_cpu_freq(struct cpufreq_policy *policy, unsigned int new_freq)
 	}
 
 	cpufreq_notify_transition(&freqs, CPUFREQ_PRECHANGE);
+
+#if defined(CONFIG_PANTECH_DEBUG)
+#if defined(CONFIG_PANTECH_DEBUG_DCVS_LOG) //p14291_pantech_dbg
+//    printk(KERN_ERR "CPU[%d] : Switching  %u KHz -> %u KHz\n",
+//				        policy->cpu, freqs.old, freqs.new);
+
+	if(pantech_debug_enable)
+		 pantech_debug_dcvs_log(policy->cpu, freqs.old, freqs.new);
+#endif
+#endif 
 
 	ret = acpuclk_set_rate(policy->cpu, new_freq, SETRATE_CPUFREQ);
 	if (!ret)

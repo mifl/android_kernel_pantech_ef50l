@@ -187,7 +187,7 @@ int msm_gemini_framedone_irq(struct msm_gemini_device *pgmn_dev,
 {
 	int rc = 0;
 
-	GMN_PR_ERR("%s:%d] buf_in %p", __func__, __LINE__, buf_in);
+	GMN_DBG("%s:%d] buf_in %p", __func__, __LINE__, buf_in);
 
 	if (buf_in) {
 		buf_in->vbuf.framedone_len = buf_in->framedone_len;

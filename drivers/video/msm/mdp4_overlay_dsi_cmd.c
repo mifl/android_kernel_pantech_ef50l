@@ -31,7 +31,11 @@
 #include "mipi_dsi.h"
 #include "mdp4.h"
 
+#if defined(CONFIG_MACH_APQ8064_EF52S) || defined(CONFIG_MACH_APQ8064_EF52K) || defined(CONFIG_MACH_APQ8064_EF52L)
+static int vsync_start_y_adjust = 415;
+#else
 static int vsync_start_y_adjust = 4;
+#endif
 
 #define MAX_CONTROLLER	1
 
@@ -1058,7 +1062,18 @@ int mdp4_dsi_cmd_on(struct platform_device *pdev)
 	pr_debug("%s+: pid=%d\n", __func__, current->pid);
 
 	mfd = (struct msm_fb_data_type *)platform_get_drvdata(pdev);
+#ifdef CONFIG_F_SKYDISP_QCBUGFIX_CONTINUOUS_SPLASH_SCREEN  // 20121217, kkcho, for sleep_current
+	if (!(mfd->cont_splash_done)) {
+		mfd->cont_splash_done = 1;
+		/*
+		 * Clks are enabled in probe.
+		 * Disabling clocks now
+		 */
+		mdp_clk_ctrl(0);
+	}
+#else
 	mfd->cont_splash_done = 1;
+#endif
 
 	mutex_lock(&mfd->dma->ov_mutex);
 

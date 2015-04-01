@@ -908,6 +908,76 @@ config MACH_MPQ8064_DTV
 	help
 	  Support for the Qualcomm MPQ8064 DTV device.
 
+config MACH_APQ8064_EF48S
+	depends on ARCH_APQ8064
+	bool "APQ8064 EF48S"
+	select CUST_PANTECH_H
+	help
+	  Support for the Pantech APQ8064 EF48S device.
+
+config MACH_APQ8064_EF49K
+	depends on ARCH_APQ8064
+	bool "APQ8064 EF49K"
+	select CUST_PANTECH_H
+	help
+	  Support for the Pantech APQ8064 EF49K device.
+
+config MACH_APQ8064_EF50L
+	depends on ARCH_APQ8064
+	bool "APQ8064 EF50L"
+	select CUST_PANTECH_H
+	help
+	  Support for the Pantech APQ8064 EF50L device.
+
+config MACH_APQ8064_EF51S
+	depends on ARCH_APQ8064
+	bool "APQ8064 EF51S"
+	select CUST_PANTECH_H
+	help
+	  Support for the Pantech APQ8064 EF51S device.
+
+config MACH_APQ8064_EF51K
+	depends on ARCH_APQ8064
+	bool "APQ8064 EF51K"
+	select CUST_PANTECH_H
+	help
+	  Support for the Pantech APQ8064 EF51K device.
+
+config MACH_APQ8064_EF51L
+	depends on ARCH_APQ8064
+	bool "APQ8064 EF51L"
+	select CUST_PANTECH_H
+	help
+	  Support for the Pantech APQ8064 EF51L device.
+
+config MACH_APQ8064_EF52S
+	depends on ARCH_APQ8064
+	bool "APQ8064 EF52S"
+	select CUST_PANTECH_H
+	help
+	  Support for the Pantech APQ8064 EF52S device.
+
+config MACH_APQ8064_EF52K
+	depends on ARCH_APQ8064
+	bool "APQ8064 EF52K"
+	select CUST_PANTECH_H
+	help
+	  Support for the Pantech APQ8064 EF52K device.
+
+config MACH_APQ8064_EF52L
+	depends on ARCH_APQ8064
+	bool "APQ8064 EF52L"
+	select CUST_PANTECH_H
+	help
+	  Support for the Pantech APQ8064 EF52L device.
+
+config CUST_PANTECH_H
+	bool
+
+if CUST_PANTECH_H
+source "arch/arm/mach-msm/cust/Kconfig"
+endif
+
 config MACH_FSM9XXX_SURF
 	depends on ARCH_FSM9XXX
 	depends on !MSM_STACKED_MEMORY
@@ -2408,6 +2478,7 @@ config MSM_OCMEM_POWER_DISABLE
 
 config MSM_RTB
 	bool "Register tracing"
+	default y
 	help
 	  Add support for logging different events to a small uncached
 	  region. This is designed to aid in debugging reset cases where the
@@ -2432,6 +2503,10 @@ config MSM_EBI_ERP
 	  seemingly broken memory accesses.
 
 	  For production builds, you should probably say 'N' here.
+
+config 3LED_SETTING
+	bool
+	default y
 
 config MSM_CACHE_ERP
 	bool "Cache / CPU error reporting"

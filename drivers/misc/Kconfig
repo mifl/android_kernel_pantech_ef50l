@@ -681,6 +681,18 @@ config BU52031NVX_POUCHDETECT
 	help
 	  depends on BU52031NVX
 
+config PN544
+	bool "NXP PN544 NFC Controller Driver"
+	depends on I2C
+	default y
+	help
+	  NXP PN544 Near Field Communication controller support.
+
+config PIEZO
+	tristate "ti_drv2667"
+	default n
+	depends on I2C
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"

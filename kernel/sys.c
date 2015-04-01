@@ -54,6 +54,10 @@
 #include <asm/io.h>
 #include <asm/unistd.h>
 
+#if defined(CONFIG_PANTECH_DEBUG)
+#include <mach/pantech_debug.h> 
+#endif
+
 #ifndef SET_UNALIGN_CTL
 # define SET_UNALIGN_CTL(a,b)	(-EINVAL)
 #endif
@@ -314,6 +318,10 @@ void emergency_restart(void)
 }
 EXPORT_SYMBOL_GPL(emergency_restart);
 
+#ifdef CONFIG_F_SKYDISP_SHARP_LCD_FLICKER
+extern void pantech_mipi_lcd_shutdown(void);
+#endif
+
 void kernel_restart_prepare(char *cmd)
 {
 	blocking_notifier_call_chain(&reboot_notifier_list, SYS_RESTART, cmd);
@@ -365,6 +373,11 @@ EXPORT_SYMBOL(unregister_reboot_notifier);
 void kernel_restart(char *cmd)
 {
 	kernel_restart_prepare(cmd);
+
+#ifdef CONFIG_F_SKYDISP_SHARP_LCD_FLICKER
+	pantech_mipi_lcd_shutdown();
+#endif
+
 	if (!cmd)
 		printk(KERN_EMERG "Restarting system.\n");
 	else
@@ -406,6 +419,11 @@ EXPORT_SYMBOL_GPL(kernel_halt);
 void kernel_power_off(void)
 {
 	kernel_shutdown_prepare(SYSTEM_POWER_OFF);
+
+#ifdef CONFIG_F_SKYDISP_SHARP_LCD_FLICKER
+	pantech_mipi_lcd_shutdown();
+#endif
+
 	if (pm_power_off_prepare)
 		pm_power_off_prepare();
 	disable_nonboot_cpus();
@@ -479,6 +497,16 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 		panic("cannot halt");
 
 	case LINUX_REBOOT_CMD_POWER_OFF:
+#if defined(CONFIG_PANTECH_DEBUG)
+		if (pantech_debug_enable) {
+			if (strncpy_from_user(&buffer[0], arg, sizeof(buffer)) <= 0) {
+				printk(KERN_EMERG "System normal power off.\n");
+			} else { 
+				panic("Restarting system with command '%s'.\n", buffer);
+				break;
+			}
+		}
+#endif
 		kernel_power_off();
 		do_exit(0);
 		break;

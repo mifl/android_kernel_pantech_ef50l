@@ -202,12 +202,13 @@ static int slave_configure(struct scsi_device *sdev)
 		if (us->fflags & US_FL_NO_READ_CAPACITY_16)
 			sdev->no_read_capacity_16 = 1;
 
+#if defined(CONFIG_ANDROID_PANTECH_USB_OTG_INTENT)
 		/*
 		 * Many devices do not respond properly to READ_CAPACITY_16.
 		 * Tell the SCSI layer to try READ_CAPACITY_10 first.
 		 */
 		sdev->try_rc_10_first = 1;
-
+#endif //2014.7.22 Lexar memory(protection information support) detection issue.
 		/* assume SPC3 or latter devices support sense size > 18 */
 		if (sdev->scsi_level > SCSI_SPC_2)
 			us->fflags |= US_FL_SANE_SENSE;

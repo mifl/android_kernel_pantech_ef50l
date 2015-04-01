@@ -367,6 +367,39 @@ command_alloc_fail:
 	return -EINVAL;
 }
 
+#if	1//def F_PANTECH_CAMERA_DEADBEEF_ERROR_FIX
+void msm_cam_stop_hardware(struct msm_cam_v4l2_device *pcam)
+{
+	struct msm_cam_media_controller *pmctl;
+
+	
+	pr_err("%s: stopping hardware upon error\n", __func__);
+	if (pcam == NULL)
+	{
+		printk("[pcam == NULL] return\n");
+	    return;
+	}
+	
+
+	pmctl = msm_cam_server_get_mctl(pcam->mctl_handle);
+	if(pmctl != NULL){ 
+		if (pmctl && pmctl->mctl_release) {
+			pmctl->mctl_cmd = NULL;
+
+			if(pmctl->mctl_release)
+				pmctl->mctl_release(pmctl);
+			pmctl->mctl_release = NULL;
+
+		} else {
+			pr_err("%s: pmctl %p, pmctl->mctl_release %p\n", __func__, 
+				pmctl, pmctl->mctl_release);
+		}
+	} else
+		pr_err("%s: pmctl is NULL",__func__);
+
+}
+#endif
+
 /* send control command to config and wait for results*/
 static int msm_server_control(struct msm_cam_server_dev *server_dev,
 				uint32_t id, struct msm_ctrl_cmd *out)
@@ -383,6 +416,9 @@ static int msm_server_control(struct msm_cam_server_dev *server_dev,
 	struct v4l2_event v4l2_evt;
 	struct msm_isp_event_ctrl *isp_event;
 	void *ctrlcmd_data;
+#if	1//def F_PANTECH_CAMERA_DEADBEEF_ERROR_FIX
+	struct msm_cam_v4l2_device *pcam = server_dev->pcam_active[0];
+#endif
 
 	event_qcmd = kzalloc(sizeof(struct msm_queue_cmd), GFP_KERNEL);
 	if (!event_qcmd) {
@@ -448,6 +484,9 @@ static int msm_server_control(struct msm_cam_server_dev *server_dev,
 		rc = wait_event_interruptible_timeout(queue->wait,
 			!list_empty_careful(&queue->list),
 			msecs_to_jiffies(out->timeout_ms));
+#if	1//def F_PANTECH_CAMERA_DEADBEEF_ERROR_FIX
+        if(out->type != MSM_V4L2_CLOSE)
+#endif        
 		wait_count--;
 		if (rc != -ERESTARTSYS)
 			break;
@@ -464,7 +503,23 @@ static int msm_server_control(struct msm_cam_server_dev *server_dev,
 		if (rc < 0) {
 			if (++server_dev->server_evt_id == 0)
 				server_dev->server_evt_id++;
+#if	0//def F_PANTECH_CAMERA_DEADBEEF_ERROR_FIX
 			pr_err("%s: wait_event error %d\n", __func__, rc);
+#else
+            pr_err("%s: wait_event error %d for command = %d for %d ms\n",
+                                __func__, rc, out->type, out->timeout_ms);
+            if (out->type == MSM_V4L2_SET_CTRL_CMD) {
+                pr_err("__debug: Set native ctrl type is %d\n",
+                        ((struct msm_ctrl_cmd *)out->value)->type);
+             } else if (out->type == MSM_V4L2_SET_CTRL) {
+                pr_err("__debug: Set ctrl type is 0x%x\n",
+                ((struct v4l2_control *)out->value)->id);
+            }
+
+            if (pcam) {
+                msm_cam_stop_hardware(pcam);
+            }
+#endif
 			return rc;
 		} else {
 			pr_err("%s: List is empty\n", __func__);

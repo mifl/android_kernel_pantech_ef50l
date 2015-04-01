@@ -22,6 +22,9 @@
 
 #include "smd_private.h"
 
+//2013.12.20 8064_1.7G_KK thermal added by wooyub
+#include <linux/io.h>
+#include <mach/msm_iomap.h>
 #define BUILD_ID_LENGTH 32
 
 enum {
@@ -51,6 +54,20 @@ const char *hw_platform[] = {
 	[HW_PLATFORM_DRAGON] = "Dragon",
 	[HW_PLATFORM_QRD] = "QRD",
 };
+
+#if (defined(CONFIG_MACH_APQ8064_EF52S)||defined(CONFIG_MACH_APQ8064_EF52K)||defined(CONFIG_MACH_APQ8064_EF52L)||defined(CONFIG_MACH_APQ8064_EF52W))
+#define NUM_PVS (7)
+//2013.12.20 8064_1.7G_KK thermal added by wooyub
+const char *thermal_pvs_info[NUM_PVS] = {
+    [0] = "0",
+    [1] = "1",
+    [2] = "2",
+    [3] = "3",
+    [4] = "4",
+    [5] = "5",
+    [6] = "6",
+};
+#endif
 
 enum {
 	ACCESSORY_CHIP_UNKNOWN = 0,
@@ -599,6 +616,80 @@ socinfo_show_pmic_die_revision(struct sys_device *dev,
 		socinfo_get_pmic_die_revision());
 }
 
+#if (defined(CONFIG_MACH_APQ8064_EF51S)||defined(CONFIG_MACH_APQ8064_EF51K)||defined(CONFIG_MACH_APQ8064_EF51L)||defined(CONFIG_MACH_APQ8064_EF48S)||defined(CONFIG_MACH_APQ8064_EF49K)||defined(CONFIG_MACH_APQ8064_EF50L))
+static ssize_t
+socinfo_show_krait_part(struct sys_device *dev,
+		struct sysdev_attribute *attr,
+		char *buf)
+{
+	uint32_t pte_efuse, pvs;
+	char r;
+
+	pte_efuse = readl((MSM_QFPROM_BASE + 0x00C0));
+	pvs = (pte_efuse >> 10) & 0x7;
+	if (pvs == 0x7)
+		pvs = (pte_efuse >> 13) & 0x7;
+
+	switch (pvs) 
+    {
+    	case 0x0:
+    	case 0x7:
+    		r = 'T';
+    		break;
+    	case 0x1:
+    		r = 'E';
+    		break;
+    	case 0x3:
+    		r = 'C';
+    		break;
+    	case 0x4:
+    		r = 'H';
+    		break;
+    	default:
+    		r = 'T';
+    		break;
+    }
+	return snprintf(buf, PAGE_SIZE, "%c\n",r);
+}
+#elif (defined(CONFIG_MACH_APQ8064_EF52S)||defined(CONFIG_MACH_APQ8064_EF52K)||defined(CONFIG_MACH_APQ8064_EF52L)||defined(CONFIG_MACH_APQ8064_EF52W))
+//2013.12.20 8064_1.7G_KK thermal added by wooyub
+static int get_pvs_bin(u32 pte_efuse)
+{
+    uint32_t pvs_bin;
+
+	pvs_bin = (pte_efuse >> 10) & 0x7;
+	if (pvs_bin == 0x7)
+		pvs_bin = (pte_efuse >> 13) & 0x7;
+
+	if (pvs_bin == 0x7) {
+		pvs_bin = 0;
+		printk(KERN_INFO "socinfo_show_pvs_info =>PVS BIN: Defaulting to %d\n", pvs_bin);
+        
+	} else {
+		printk(KERN_INFO "socinfo_show_pvs_info =>PVS BIN:  %d\n", pvs_bin);
+	}
+
+    return pvs_bin;
+}
+//2013.12.20 8064_1.7G_KK thermal added by wooyub
+static ssize_t
+socinfo_show_krait_part(struct sys_device *dev,
+		struct sysdev_attribute *attr,
+		char *buf)
+{
+	uint32_t pte_efuse;
+
+	pte_efuse = readl((MSM_QFPROM_BASE + 0x00C0));
+	return snprintf(buf, PAGE_SIZE, "%-.32s\n",thermal_pvs_info[get_pvs_bin(pte_efuse)]);
+}
+#endif
+
+//2013.12.20 8064_1.7G_KK thermal added by wooyub
+
+static struct sysdev_attribute socinfo_krait_part_files[] = {
+	_SYSDEV_ATTR(krait_part, 0444,
+			socinfo_show_krait_part, NULL),
+};
 static struct sysdev_attribute socinfo_v1_files[] = {
 	_SYSDEV_ATTR(id, 0444, socinfo_show_id, NULL),
 	_SYSDEV_ATTR(version, 0444, socinfo_show_version, NULL),
@@ -682,6 +773,9 @@ static int __init socinfo_init_sysdev(void)
 		       __func__, err);
 		return err;
 	}
+	//2013.12.20 8064_1.7G_KK thermal added by wooyub
+	socinfo_create_files(&soc_sys_device, socinfo_krait_part_files,
+				ARRAY_SIZE(socinfo_krait_part_files));
 	socinfo_create_files(&soc_sys_device, socinfo_v1_files,
 				ARRAY_SIZE(socinfo_v1_files));
 	if (socinfo->v1.format < 2)

@@ -78,7 +78,9 @@ static struct v4l2_subdev_ops imx091_subdev_ops = {
 };
 
 static struct msm_sensor_fn_t imx091_func_tbl = {
+#ifndef CONFIG_PANTECH_CAMERA
 	.sensor_config = msm_sensor_bayer_config,
+#endif
 	.sensor_power_up = msm_sensor_bayer_power_up,
 	.sensor_power_down = msm_sensor_bayer_power_down,
 	.sensor_get_csi_params = msm_sensor_bayer_get_csi_params,

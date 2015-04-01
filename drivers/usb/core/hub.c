@@ -180,6 +180,9 @@ EXPORT_SYMBOL_GPL(ehci_cf_port_reset_rwsem);
 #define HUB_DEBOUNCE_STEP	  25
 #define HUB_DEBOUNCE_STABLE	 100
 
+#ifdef CONFIG_ANDROID_PANTECH_USB_OTG_INTENT
+extern int set_otg_dev_state(int mode);
+#endif /* CONFIG_ANDROID_PANTECH_USB_OTG_INTENT */
 
 static int usb_reset_and_verify_device(struct usb_device *udev);
 
@@ -1722,6 +1725,26 @@ void usb_disconnect(struct usb_device **pdev)
 	}
 #endif
 
+#ifdef CONFIG_ANDROID_PANTECH_USB_OTG_INTENT
+	if(udev->product != NULL){
+	if (strcmp(udev->product, "Qualcomm On-Chip EHCI Host Controller")) {
+		if (strcmp(udev->product, "Qualcomm EHCI Host Controller using HSIC")) {	
+			if (strcmp(udev->product, "QHSUSB__BULK")) {
+				if (strcmp(udev->product, "Qualcomm CDMA Technologies MSM")) {
+						printk("^^^^ %s: disconnected\n", __func__);
+       					printk("^^^^  %s\n",udev->product);
+						set_otg_dev_state(0);
+				}
+			}
+		}
+	}
+	}else{
+	       printk("^^^^ %s: NULL Device disconnected\n", __func__);
+	       printk("^^^^  %s\n",udev->product);
+		set_otg_dev_state(0);
+	}
+#endif /* CONFIG_ANDROID_PANTECH_USB_OTG_INTENT */
+
 	usb_lock_device(udev);
 
 	/* Free up all the children before we remove this device */
@@ -2037,6 +2060,36 @@ int usb_new_device(struct usb_device *udev)
 
 	/* Tell the world! */
 	announce_device(udev);
+
+#ifdef CONFIG_ANDROID_PANTECH_USB_OTG_INTENT
+	printk("^^^^ bDeviceClass %d\n",udev->descriptor.bDeviceClass);
+	printk("^^^^ bDeviceSubClass %d\n",udev->descriptor.bDeviceSubClass);
+	printk("^^^^ bDeviceProtocol %d\n",udev->descriptor.bDeviceProtocol);
+
+	if(udev->product != NULL){
+		if (strcmp(udev->product, "Qualcomm On-Chip EHCI Host Controller")) {
+			if (strcmp(udev->product, "Qualcomm EHCI Host Controller using HSIC")) {	
+				if (strcmp(udev->product, "QHSUSB__BULK")) {
+					if (strcmp(udev->product, "Qualcomm CDMA Technologies MSM")) {	
+						printk("^^^^ 1 %s\n",udev->product);
+						set_otg_dev_state(1);
+					}
+				}
+			}
+		}
+	}else{
+		if(udev->descriptor.bDeviceClass == 0x09 && udev->descriptor.bDeviceSubClass == 0x00 && 
+			udev->descriptor.bDeviceProtocol == 0x01){
+				//printk("^^^^ it's hub\n");
+				err = 1;
+				goto fail;
+		}else{
+		printk("^^^^ 2\n");
+			 set_otg_dev_state(1);
+			//printk("^^^^ it's not hub\n");
+		}
+	}
+#endif /* CONFIG_ANDROID_PANTECH_USB_OTG_INTENT */
 
 	device_enable_async_suspend(&udev->dev);
 

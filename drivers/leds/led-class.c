@@ -23,6 +23,24 @@
 
 #define LED_BUFF_SIZE 50
 
+#ifdef CONFIG_PANTECH_LED_BLINK_CONTROL
+/* -------------------------------------------------------------------- */
+/*   debug option - p11309 */
+/* -------------------------------------------------------------------- */
+#define DBG_ENABLE
+
+#ifdef DBG_ENABLE
+#define dbg(fmt, args...)   pr_debug("[LED] " fmt, ##args)
+#else
+#define dbg(fmt, args...)
+#endif
+#define dbg_func_in()       dbg("[+] %s\n", __func__)
+#define dbg_func_out()      dbg("[-] %s\n", __func__)
+#define dbg_line()          dbg("[LINE] %d(%s)\n", __LINE__, __func__)
+
+/* -------------------------------------------------------------------- */
+#endif /* CONFIG_PANTECH_LED_BLINK_CONTROL */
+
 static struct class *leds_class;
 
 static void led_update_brightness(struct led_classdev *led_cdev)
@@ -92,10 +110,82 @@ static ssize_t led_max_brightness_show(struct device *dev,
 	return snprintf(buf, LED_BUFF_SIZE, "%u\n", led_cdev->max_brightness);
 }
 
+#ifdef CONFIG_PANTECH_LED_BLINK_CONTROL
+static ssize_t led_blink_enable_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct led_classdev *led_cdev = dev_get_drvdata(dev);
+	dbg("brightness show: name=%s, brightness=%d,  onMS=%lu,  offMS=%lu \n",
+		led_cdev->name, led_cdev->brightness, led_cdev->blink_delay_on, led_cdev->blink_delay_off);
+
+
+	return snprintf(buf, LED_BUFF_SIZE, "%u\n", led_cdev->brightness);
+}
+
+static ssize_t led_blink_enable_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
+{
+	unsigned long data;	//32bit 31-15;Off Time, 15-7; 0n Time, 7-3;brightness,3-1;reserved , 0;enable mask
+
+	int flag;//0xf= enable, 0x0=disable
+	int on;  // 1 unit =10 msec
+	int off; //	1 unit =10 msec
+	int level; //led brightness level
+
+	struct led_classdev *led_cdev = dev_get_drvdata(dev);
+	ssize_t ret = -EINVAL;
+
+//	ret = strict_strtoul(buf, 10, &data);
+	ret = kstrtoul(buf, 10, &data);
+
+
+	if (!ret){
+		ret= size;
+
+		//check bit mask
+		flag = data & 0x1;
+		on = ((data >> 8) & 0xFF)*10;
+		off = ((data >> 16) & 0xFFFF)*10;
+		level = ((data >>3)) & 0xF;
+		if (level > 10){
+			printk("%s: name=%s, input level=%d, It will be changed to level 10. \n",
+						__func__,led_cdev->name, level);
+			level=10;// max level is 10
+		}
+		//set parameter
+		led_cdev->blink_delay_on = on;
+		led_cdev->blink_delay_off = off;
+		led_cdev->brightness= level<<4;
+
+		if (flag == 1 && led_cdev->brightness > 0) {
+		//printk("%s: name=%s, level=%d, brightness=%d  ,onMS=%lu,  offMS=%lu , flag=%d\n",
+		//	__func__,led_cdev->name, level,led_cdev->brightness, led_cdev->blink_delay_on,led_cdev->blink_delay_off, flag);
+
+		led_cdev->blink_set(
+					led_cdev,
+					&led_cdev->blink_delay_on,
+					&led_cdev->blink_delay_off,
+					(led_cdev->brightness*100)/led_cdev->max_brightness);
+
+		}
+		else{
+			led_brightness_set(led_cdev, 0);
+		//	printk("%s: name=%s, level=%d, brightness=%d  ,onMS=%lu,  offMS=%lu , flag=%d\n",
+		//	__func__,led_cdev->name, level,led_cdev->brightness, led_cdev->blink_delay_on,led_cdev->blink_delay_off, flag);
+		}
+
+	}
+	return ret;
+
+}
+#endif /* CONFIG_PANTECH_LED_BLINK_CONTROL */
+
 static struct device_attribute led_class_attrs[] = {
 	__ATTR(brightness, 0644, led_brightness_show, led_brightness_store),
 	__ATTR(max_brightness, 0644, led_max_brightness_show,
 			led_max_brightness_store),
+#ifdef CONFIG_PANTECH_LED_BLINK_CONTROL
+	__ATTR(pan_led, 0664, led_blink_enable_show,
+			led_blink_enable_store),
+#endif /* CONFIG_PANTECH_LED_BLINK_CONTROL */
 #ifdef CONFIG_LEDS_TRIGGERS
 	__ATTR(trigger, 0644, led_trigger_show, led_trigger_store),
 #endif

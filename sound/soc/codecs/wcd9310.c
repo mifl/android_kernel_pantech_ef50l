@@ -39,6 +39,21 @@
 #include "wcd9310.h"
 #include "wcdcal-hwdep.h"
 
+#ifdef CONFIG_SKY_SND_EXTERNAL_AMP //YDA165
+#if ( ( defined(CONFIG_SKY_EF51S_BOARD) || defined(CONFIG_SKY_EF51K_BOARD) || defined(CONFIG_SKY_EF51L_BOARD) ) && (CONFIG_BOARD_VER > CONFIG_WS10) ) || \
+	defined(CONFIG_SKY_EF52S_BOARD) || defined(CONFIG_SKY_EF52K_BOARD) || defined(CONFIG_SKY_EF52L_BOARD) || defined(CONFIG_SKY_EF52W_BOARD)
+#include "../msm/pantech_snd_extamp_yda165.h"
+#else
+#include "../msm/sky_snd_fab2210.h"
+#endif
+#endif /* CONFIG_SKY_SND_EXTERNAL_AMP */
+
+#ifdef CONFIG_SKY_SND_HEADSET_BUTTON_ADC  //20121119 jhsong : #8378522# test code headset button adc level check
+#include <linux/proc_fs.h>
+struct proc_dir_entry *wcd9310_headset_button_dir;
+static s32 mv_s_backup = 0;
+#endif
+
 static int cfilt_adjust_ms = 10;
 module_param(cfilt_adjust_ms, int, 0644);
 MODULE_PARM_DESC(cfilt_adjust_ms, "delay after adjusting cfilt voltage in ms");
@@ -472,6 +487,15 @@ static unsigned short tx_digital_gain_reg[] = {
 	TABLA_A_CDC_TX9_VOL_CTL_GAIN,
 	TABLA_A_CDC_TX10_VOL_CTL_GAIN,
 };
+
+//HDJ_LS4_Sound_20120503
+static int headset_jack_status = 0; 
+
+int wcd9310_headsetJackStatusGet(void)
+{
+	return headset_jack_status;
+}
+//HDJ_LS4_Sound_20120503_END
 
 static int tabla_codec_enable_charge_pump(struct snd_soc_dapm_widget *w,
 		struct snd_kcontrol *kcontrol, int event)
@@ -3003,6 +3027,10 @@ static int tabla_codec_enable_rx_bias(struct snd_soc_dapm_widget *w,
 
 	pr_debug("%s %d\n", __func__, event);
 
+#ifdef CONFIG_SKY_SND_MODIFIER
+	mdelay(40); // QCOM: Adding delay here is removing tick noise
+#endif
+
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
 		tabla_enable_rx_bias(codec, 1);
@@ -3234,9 +3262,31 @@ static int tabla_hph_pa_event(struct snd_soc_dapm_widget *w,
 			tabla_codec_switch_micbias(codec, 1);
 			TABLA_RELEASE_LOCK(tabla->codec_resource_lock);
 		}
+
+#ifdef CONFIG_SKY_SND_EXTERNAL_AMP //YDA165
+		if (!strncmp(w->name, "HPHR", 4)) {
+#if ( ( defined(CONFIG_SKY_EF51S_BOARD) || defined(CONFIG_SKY_EF51K_BOARD) || defined(CONFIG_SKY_EF51L_BOARD) ) && (CONFIG_BOARD_VER > CONFIG_WS10) ) || \
+	defined(CONFIG_SKY_EF52S_BOARD) || defined(CONFIG_SKY_EF52K_BOARD) || defined(CONFIG_SKY_EF52L_BOARD) || defined(CONFIG_SKY_EF52W_BOARD)
+		snd_extamp_api_SetDevice(1, SND_DEVICE_HEADSET_RX);
+#else
+		snd_subsystem_hp_poweron();
+#endif		
+		}	
+#endif /* CONFIG_SKY_SND_EXTERNAL_AMP */
 		break;
 
 	case SND_SOC_DAPM_POST_PMD:
+#ifdef CONFIG_SKY_SND_EXTERNAL_AMP //YDA165
+		if (!strncmp(w->name, "HPHR", 4)) {
+#if ( ( defined(CONFIG_SKY_EF51S_BOARD) || defined(CONFIG_SKY_EF51K_BOARD) || defined(CONFIG_SKY_EF51L_BOARD) ) && (CONFIG_BOARD_VER > CONFIG_WS10) ) || \
+	defined(CONFIG_SKY_EF52S_BOARD) || defined(CONFIG_SKY_EF52K_BOARD) || defined(CONFIG_SKY_EF52L_BOARD) || defined(CONFIG_SKY_EF52W_BOARD)
+		snd_extamp_api_SetDevice(0, SND_DEVICE_HEADSET_RX);		
+#else
+		snd_subsystem_standby(SYSTEM_OFF);
+#endif		
+	}	
+#endif /* CONFIG_SKY_SND_EXTERNAL_AMP */
+
 		/* schedule work is required because at the time HPH PA DAPM
 		 * event callback is called by DAPM framework, CODEC dapm mutex
 		 * would have been locked while snd_soc_jack_report also
@@ -4179,6 +4229,7 @@ static int tabla_startup(struct snd_pcm_substream *substream,
 	return 0;
 }
 
+#if 0 // jmlee SR Case No 00926132 Watch dog Reset by slimbus disable error... Patch 
 static void tabla_shutdown(struct snd_pcm_substream *substream,
 		struct snd_soc_dai *dai)
 {
@@ -4207,6 +4258,7 @@ static void tabla_shutdown(struct snd_pcm_substream *substream,
 		pm_runtime_put(tabla_core->dev->parent);
 	}
 }
+#endif
 
 int tabla_mclk_enable(struct snd_soc_codec *codec, int mclk_enable, bool dapm)
 {
@@ -4392,10 +4444,32 @@ static int tabla_get_channel_map(struct snd_soc_dai *dai,
 		}
 	} else if (dai->id == AIF2_CAP) {
 		*tx_num = tabla_dai[dai->id - 1].capture.channels_max;
+#if 0 // SD epos check FC miss
 		tx_slot[0] = tx_ch[cnt];
 		tx_slot[1] = tx_ch[1 + cnt];
 		tx_slot[2] = tx_ch[5 + cnt];
 		tx_slot[3] = tx_ch[3 + cnt];
+#else
+#if 1 // jmlee 1031 case 00896266 SLIM TX3 --> SLIM TX10, because echo reference uses SLIM TX3
+#if defined(CONFIG_SKY_EF51S_BOARD) || defined(CONFIG_SKY_EF51K_BOARD) || defined(CONFIG_SKY_EF51L_BOARD)
+		tx_slot[0] = tx_ch[1 + cnt];
+		tx_slot[1] = tx_ch[9 + cnt];
+		tx_slot[2] = tx_ch[8 + cnt];
+		tx_slot[3] = tx_ch[0 + cnt];		
+#else
+		tx_slot[0] = tx_ch[1+cnt];
+		tx_slot[1] = tx_ch[9+ cnt]; //
+		tx_slot[2] = tx_ch[8 + cnt];
+#endif	
+#else
+// now EPOS ADC3 --> DEC9 --> tx9
+//		tx_slot[0] = tx_ch[1+cnt];
+		tx_slot[0] = tx_ch[1+cnt];    // jmlee epos check  "to make epos to use TX9 '136'"
+		tx_slot[1] = tx_ch[2+ cnt];
+		tx_slot[2] = tx_ch[8 + cnt];
+		//tx_slot[3] = tx_ch[3 + cnt];
+#endif		
+#endif
 
 	} else if (dai->id == AIF3_PB) {
 		*rx_num = tabla_dai[dai->id - 1].playback.channels_max;
@@ -4479,12 +4553,18 @@ static struct snd_soc_dapm_widget tabla_dapm_aif_out_widgets[] = {
 	SND_SOC_DAPM_AIF_OUT_E("SLIM TX8", "AIF1 Capture", 0, SND_SOC_NOPM, 8,
 				0, tabla_codec_enable_slimtx,
 				SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
-
+#if 1 // jmlee 1031 epose 
+	SND_SOC_DAPM_AIF_OUT_E("SLIM TX9", "AIF2 Capture", 0, SND_SOC_NOPM, 9,
+#else
 	SND_SOC_DAPM_AIF_OUT_E("SLIM TX9", "AIF1 Capture", 0, SND_SOC_NOPM, 9,
+#endif	
 				0, tabla_codec_enable_slimtx,
 				SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
-
+#if 1 // jmlee 1031 case 00896266 SLIM TX3 --> SLIM TX10, because echo reference uses SLIM TX3
+	SND_SOC_DAPM_AIF_OUT_E("SLIM TX10", "AIF2 Capture", 0, SND_SOC_NOPM, 10,
+#else
 	SND_SOC_DAPM_AIF_OUT_E("SLIM TX10", "AIF1 Capture", 0, SND_SOC_NOPM, 10,
+#endif	
 				0, tabla_codec_enable_slimtx,
 				SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
 };
@@ -4768,7 +4848,9 @@ static int tabla_hw_params(struct snd_pcm_substream *substream,
 
 static struct snd_soc_dai_ops tabla_dai_ops = {
 	.startup = tabla_startup,
+#if 0 // jmlee SR Case No 00926132 Watch dog Reset by slimbus disable error... Patch 
 	.shutdown = tabla_shutdown,
+#endif
 	.hw_params = tabla_hw_params,
 	.set_sysclk = tabla_set_dai_sysclk,
 	.set_fmt = tabla_set_dai_fmt,
@@ -5085,6 +5167,9 @@ static int tabla_codec_enable_slimtx(struct snd_soc_dapm_widget *w,
 			ret = wcd9xxx_close_slim_sch_tx(tabla,
 						tabla_p->dai[j].ch_num,
 						tabla_p->dai[j].ch_tot);
+#ifdef CONFIG_SKY_SND_MODIFIER //20120618 jhsong : qct patch
+			usleep_range(5000, 5000);
+#endif
 			ret = tabla_codec_enable_chmask(tabla_p,
 						SND_SOC_DAPM_POST_PMD,
 						j);
@@ -5746,6 +5831,10 @@ static void tabla_codec_report_plug(struct snd_soc_codec *codec, int insertion,
 			}
 			pr_debug("%s: Reporting removal %d(%x)\n", __func__,
 				 jack_type, tabla->hph_status);
+                       
+            //HDJ_LS4_Sound_20120521
+            headset_jack_status = 0; //HDJ
+            //HDJ_LS4_Sound_20120521_END
 			tabla_snd_soc_jack_report(tabla,
 						  tabla->mbhc_cfg.headset_jack,
 						  tabla->hph_status,
@@ -5786,6 +5875,9 @@ static void tabla_codec_report_plug(struct snd_soc_codec *codec, int insertion,
 		if (tabla->mbhc_cfg.headset_jack) {
 			pr_debug("%s: Reporting insertion %d(%x)\n", __func__,
 				 jack_type, tabla->hph_status);
+            //HDJ_LS4_Sound_20120521
+            headset_jack_status = jack_type; 
+            //HDJ_LS4_Sound_20120521_END
 			tabla_snd_soc_jack_report(tabla,
 						  tabla->mbhc_cfg.headset_jack,
 						  tabla->hph_status,
@@ -6456,6 +6548,32 @@ static int tabla_get_button_mask(const int btn)
 	return mask;
 }
 
+#ifdef CONFIG_SKY_SND_HEADSET_BUTTON_ADC  //20121119 jhsong : #8378522# test code headset button adc level check
+static int proc_debug_wcd9310_get_hsADC(char *page, char **start, off_t offset,
+					int count, int *eof, void *data)
+{   
+    *eof = 1;  
+    return sprintf(page, "%d\n", mv_s_backup);
+}
+
+static void create_hs_button_testmenu_entries(void)
+{
+ 	struct proc_dir_entry *ent;
+
+	wcd9310_headset_button_dir = proc_mkdir("tabla_codec", NULL);
+
+	if (wcd9310_headset_button_dir == NULL) {
+		pr_err("Unable to create /proc/tabla_codec directory\n");
+	}
+
+	ent = create_proc_entry("hs_button_id", S_IRUGO, wcd9310_headset_button_dir);
+	if (ent == NULL) 
+		pr_err("Unable to create /proc/hs_button_id entry\n");
+	
+	ent->read_proc = proc_debug_wcd9310_get_hsADC;
+}
+#endif
+
 static irqreturn_t tabla_dce_handler(int irq, void *data)
 {
 	int i, mask;
@@ -6519,6 +6637,11 @@ static irqreturn_t tabla_dce_handler(int irq, void *data)
 	btnmeas[meas++] = tabla_determine_button(priv, mv_s);
 	pr_debug("%s: meas HW - DCE %x,%d,%d button %d\n", __func__,
 		 dce, mv, mv_s, btnmeas[0]);
+
+#ifdef CONFIG_SKY_SND_HEADSET_BUTTON_ADC  //20121119 jhsong : #8378522# test code headset button adc level check
+	mv_s_backup = mv_s;
+#endif
+
 	if (n_btn_meas == 0) {
 		sta = tabla_codec_read_sta_result(codec);
 		stamv_s = stamv = tabla_codec_sta_dce_v(codec, 0, sta);
@@ -6572,12 +6695,21 @@ static irqreturn_t tabla_dce_handler(int irq, void *data)
 		mask = tabla_get_button_mask(btn);
 		priv->buttons_pressed |= mask;
 		wcd9xxx_lock_sleep(core);
+#if 1 //FEATURE_PANTECH_SND_DOMESTIC : Headset volume key delay
+		if (schedule_delayed_work(&priv->mbhc_btn_dwork,
+					  msecs_to_jiffies(2)) == 0) {
+			WARN(1, "Button pressed twice without release"
+			     "event\n");
+			wcd9xxx_unlock_sleep(core);
+		}
+#else
 		if (schedule_delayed_work(&priv->mbhc_btn_dwork,
 					  msecs_to_jiffies(400)) == 0) {
 			WARN(1, "Button pressed twice without release"
 			     "event\n");
 			wcd9xxx_unlock_sleep(core);
 		}
+#endif		
 	} else {
 		pr_debug("%s: bogus button press, too short press?\n",
 			 __func__);
@@ -8153,6 +8285,8 @@ static int tabla_handle_pdata(struct tabla_priv *tabla)
 	k3 = tabla_find_k_value(pdata->micbias.ldoh_v,
 		pdata->micbias.cfilt3_mv);
 
+	pr_err("[JIMMY] %s: ldoh_v = %d, cfilt2_mv = %d, k2 = %d\n", __func__, pdata->micbias.ldoh_v, pdata->micbias.cfilt2_mv, k2);	//Jimmy
+
 	if (IS_ERR_VALUE(k1) || IS_ERR_VALUE(k2) || IS_ERR_VALUE(k3)) {
 		rc = -EINVAL;
 		goto done;
@@ -8279,9 +8413,15 @@ static const struct tabla_reg_mask_val tabla_1_1_reg_defaults[] = {
 	TABLA_REG_VAL(TABLA_A_CDC_RX7_B5_CTL, 0x78),
 
 	/* Tabla 1.1 RX1 and RX2 Changes */
+#if 1
+    /* 20140528 frogLove_KK : change default value from 0xA0 to 0x80 due to rx voice (-3dB) down of HATS test by HW */
+	TABLA_REG_VAL(TABLA_A_CDC_RX1_B6_CTL, 0x80),
+	TABLA_REG_VAL(TABLA_A_CDC_RX2_B6_CTL, 0x80),
+#else
+    /* Qulcomm origin value both JB and KK */
 	TABLA_REG_VAL(TABLA_A_CDC_RX1_B6_CTL, 0xA0),
 	TABLA_REG_VAL(TABLA_A_CDC_RX2_B6_CTL, 0xA0),
-
+#endif
 	/* Tabla 1.1 RX3 to RX7 Changes */
 	TABLA_REG_VAL(TABLA_A_CDC_RX3_B6_CTL, 0x80),
 	TABLA_REG_VAL(TABLA_A_CDC_RX4_B6_CTL, 0x80),
@@ -8731,6 +8871,10 @@ static int tabla_codec_probe(struct snd_soc_codec *codec)
 			TABLA_IRQ_MBHC_POTENTIAL);
 		goto err_potential_irq;
 	}
+
+#ifdef CONFIG_SKY_SND_HEADSET_BUTTON_ADC  //20121119 jhsong : #8378522# test code headset button adc level check
+	create_hs_button_testmenu_entries();
+#endif
 
 	ret = wcd9xxx_request_irq(codec->control_data, TABLA_IRQ_MBHC_RELEASE,
 		tabla_release_handler, "Button Release detect", tabla);

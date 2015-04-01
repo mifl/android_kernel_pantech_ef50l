@@ -77,6 +77,20 @@
 						unsigned int)
 #define MSMFB_METADATA_GET  _IOW(MSMFB_IOCTL_MAGIC, 166, struct msmfb_metadata)
 
+/* 130124, Get LCD Revision(2 or 3).
+ * CONFIG_PANTECH_LCD_GET_LCD_REV is defined in below files.
+ * kernel/drivers/video/msm/msm_fb.h
+ * kernel/include/linux/msm_mdp.h
+ * vendor/pantech/build/CUST_PANTECH_DISPLAY.h
+ */
+#if (defined(CONFIG_SKY_EF51S_BOARD)||defined(CONFIG_SKY_EF51K_BOARD)||defined(CONFIG_SKY_EF51L_BOARD))
+#define CONFIG_PANTECH_LCD_GET_LCD_REV
+#endif
+
+#ifdef CONFIG_PANTECH_LCD_GET_LCD_REV
+#define MSMFB_PANTECH_LCD_GET_LCD_REV   _IOW(MSMFB_IOCTL_MAGIC, 200, unsigned int)
+#endif
+
 #define FB_TYPE_3D_PANEL 0x10101010
 #define MDP_IMGTYPE2_START 0x10000
 #define MSMFB_DRIVER_VERSION	0xF9E8D701

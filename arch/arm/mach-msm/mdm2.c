@@ -45,6 +45,9 @@
 
 static int mdm_debug_mask;
 
+#if defined(CONFIG_PANTECH_SMB347_CHARGER)
+extern unsigned int pantech_charging_status(void);
+#endif
 static void mdm_peripheral_connect(struct mdm_modem_drv *mdm_drv)
 {
 	if (!mdm_drv->pdata->peripheral_platform_device)
@@ -105,6 +108,11 @@ static void mdm_power_down_common(struct mdm_modem_drv *mdm_drv)
 	int soft_reset_direction =
 		mdm_drv->pdata->soft_reset_inverted ? 1 : 0;
 
+#if defined(CONFIG_PANTECH_SMB347_CHARGER)
+	/* if offline charging mode, skip func */
+	if(pantech_charging_status()) 
+		return;
+#endif
 	mdm_peripheral_disconnect(mdm_drv);
 
 	/* Wait for the modem to complete its power down actions. */
@@ -224,6 +232,11 @@ start_mdm_peripheral:
 
 static void mdm_power_on_common(struct mdm_modem_drv *mdm_drv)
 {
+#if defined(CONFIG_PANTECH_SMB347_CHARGER)
+	/* if offline charging mode, skip func */
+	if(pantech_charging_status()) 
+		return;
+#endif
 	mdm_drv->power_on_count++;
 
 	/* this gpio will be used to indicate apq readiness,

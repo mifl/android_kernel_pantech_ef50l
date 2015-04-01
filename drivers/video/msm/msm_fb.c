@@ -57,6 +57,10 @@
 #define MSM_FB_NUM	3
 #endif
 
+#ifdef CONFIG_PANTECH_LCD_GET_LCD_REV
+int mipi_renesas_fhd_manufature_ID_get(void);
+#endif
+
 static unsigned char *fbram;
 static unsigned char *fbram_phys;
 static int fbram_size;
@@ -196,11 +200,15 @@ static void msm_fb_set_bl_brightness(struct led_classdev *led_cdev,
 	else if (value >= MAX_BACKLIGHT_BRIGHTNESS)
 		bl_lvl = mfd->panel_info.bl_max;
 	else
+#ifdef CONFIG_F_SKYDISP_BACKLIGHT_BUGFIX
 		bl_lvl = mfd->panel_info.bl_min + ((value - 1) * 2 *
 			(mfd->panel_info.bl_max - mfd->panel_info.bl_min) +
 			MAX_BACKLIGHT_BRIGHTNESS - 1) /
 			(MAX_BACKLIGHT_BRIGHTNESS - 1) / 2;
-
+#else
+		bl_lvl = (2 * value * mfd->panel_info.bl_max + MAX_BACKLIGHT_BRIGHTNESS)		
+			/(2 * MAX_BACKLIGHT_BRIGHTNESS);
+#endif
         down(&mfd->sem);
 	msm_fb_set_backlight(mfd, bl_lvl);
 	up(&mfd->sem);
@@ -272,6 +280,61 @@ int msm_fb_detect_client(const char *name)
 	return ret;
 }
 
+#ifdef CONFIG_F_SKYDISP_CABC_CTRL
+int cabc_state;
+char cabc_state_ret;
+extern void cabc_control(struct msm_fb_data_type *mfd, int state);
+
+static ssize_t msm_fb_cabc_store(struct device *dev, struct device_attribute *attr, 
+			const char *buf,size_t count)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)fbi->par;
+
+	sscanf(buf, "%du", &cabc_state);
+
+	if (cabc_state == true)
+		cabc_control(mfd,true);
+	else if(cabc_state == false)
+		cabc_control(mfd,false);
+
+	return *buf;
+}
+static ssize_t msm_fb_cabc_show(struct device *dev,
+					  struct device_attribute *attr, char *buf)
+{
+	if(cabc_state == 0)
+		cabc_state_ret ='1';
+	else if(cabc_state == 1)
+		cabc_state_ret ='0';
+	return sprintf(buf, "%c\n", cabc_state_ret);
+}
+#endif
+
+#ifdef CONFIG_PANTECH_LCD_SHARPNESS_CTRL
+extern unsigned int sharpness_count;
+extern void sharpness_control(struct msm_fb_data_type *mfd, int value);
+static ssize_t msm_fb_sharpness_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)fbi->par;
+	int sharpness_input = 0;
+	
+	sscanf(buf, "%du", &sharpness_input);
+	
+	if(sharpness_input >= 0 && sharpness_input < 8) {
+		sharpness_count = sharpness_input;
+		sharpness_control(mfd, sharpness_count);
+	}
+		
+	return *buf;
+}
+
+static ssize_t msm_fb_sharpness_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", sharpness_count);
+}
+#endif
 static ssize_t msm_fb_fps_level_change(struct device *dev,
 				struct device_attribute *attr,
 				const char *buf, size_t count)
@@ -351,11 +414,111 @@ static ssize_t msm_fb_msm_fb_type(struct device *dev,
 	return ret;
 }
 
+#ifdef CONFIG_F_SKYDISP_CABC_CTRL
+static DEVICE_ATTR(cabc_ctl, S_IRUGO | S_IWUSR, msm_fb_cabc_show, msm_fb_cabc_store);
+#endif
+#ifdef CONFIG_PANTECH_LCD_SHARPNESS_CTRL
+static DEVICE_ATTR(sharpness_ctl, S_IRUGO | S_IWUSR, msm_fb_sharpness_show, msm_fb_sharpness_store);
+#endif
+
 static DEVICE_ATTR(msm_fb_type, S_IRUGO, msm_fb_msm_fb_type, NULL);
 static DEVICE_ATTR(msm_fb_fps_level, S_IRUGO | S_IWUSR | S_IWGRP, NULL, \
 				msm_fb_fps_level_change);
+
+#ifdef CONFIG_F_SKYDISP_CHECK_AND_SET_PANEL_POWER_ON
+static ssize_t msm_fb_check_panel_power_on(struct device *dev,
+		                          struct device_attribute *attr, char *buf)
+{
+	ssize_t ret = 0;
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)fbi->par;
+
+	ret = snprintf(buf, PAGE_SIZE, "%d\n", mfd->panel_power_on);
+
+	return ret;
+}
+
+#if defined(CONFIG_MACH_APQ8064_EF51S) || defined(CONFIG_MACH_APQ8064_EF51K) || defined(CONFIG_MACH_APQ8064_EF51L)
+#if CONFIG_BOARD_VER >= CONFIG_TP10
+#define USE_CABC_PWM_BL
+#endif
+#else // EF48, EF52
+#define USE_CABC_PWM_BL
+#endif
+
+#ifdef USE_CABC_PWM_BL
+extern void mipi_cabc_lcd_bl_init(int bl_level);
+#endif
+enum {		/* mipi dsi panel */
+	DSI_VIDEO_MODE,
+	DSI_CMD_MODE,
+}; // from mipi_dsi.h
+
+#ifdef CONFIG_FB_PANTECH_MIPI_SONY_CMD_HD_PANEL // 20121226, kkcho, for ##1199 LCD Front-Test
+extern int mipi_dsi_force_panel_power(int on);
+extern int mipi_sony_force_lcd_on(void);
+extern int mipi_sony_force_lcd_off(void);
+#endif
+
+static ssize_t msm_fb_set_panel_power_on(struct device *dev,
+		                          struct device_attribute *attr, const char *buf, size_t count)
+{
+	int panel_onoff;
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)fbi->par;
+
+	sscanf(buf, "%du", &panel_onoff);
+
+#ifdef CONFIG_FB_PANTECH_MIPI_SONY_CMD_HD_PANEL // 20121226, kkcho, for ##1199 LCD Front-Test
+	if (panel_onoff == 1) {
+		mipi_dsi_force_panel_power(1);
+		mipi_sony_force_lcd_on();
+		msleep(32);
+		mipi_cabc_lcd_bl_init(mfd->bl_level);
+	} else if (panel_onoff == 0) {
+		mipi_sony_force_lcd_off();
+		mipi_dsi_force_panel_power(0);
+	}
+#else
+	if (panel_onoff != mfd->panel_power_on) {
+		if (panel_onoff == 1) {
+			struct msm_panel_info *panel_info = &mfd->panel_info;
+#ifdef USE_CABC_PWM_BL
+			mipi_cabc_lcd_bl_init(mfd->bl_level);
+#endif
+			msm_fb_blank_sub(FB_BLANK_UNBLANK, fbi, mfd->op_enable);
+			if (panel_info->mipi.mode == DSI_VIDEO_MODE)
+				mdp4_dsi_video_overlay(mfd);
+			else
+				mdp4_dsi_cmd_overlay(mfd);
+		} else if (panel_onoff == 0) {
+			msm_fb_blank_sub(FB_BLANK_POWERDOWN, fbi, mfd->op_enable);
+		} else if (panel_onoff == 2) {
+			struct msm_panel_info *panel_info = &mfd->panel_info;
+			pr_info("[LIVED] DMA trigger\n");
+			if (panel_info->mipi.mode == DSI_VIDEO_MODE)
+				mdp4_dsi_video_overlay(mfd);
+			else
+				mdp4_dsi_cmd_overlay(mfd);
+		}
+	}
+#endif
+	return *buf;
+}
+static DEVICE_ATTR(panel_power_on, S_IRUGO | S_IWUSR, msm_fb_check_panel_power_on, msm_fb_set_panel_power_on);
+#endif
+
 static struct attribute *msm_fb_attrs[] = {
 	&dev_attr_msm_fb_type.attr,
+#ifdef CONFIG_F_SKYDISP_CHECK_AND_SET_PANEL_POWER_ON
+	&dev_attr_panel_power_on.attr,
+#endif
+#ifdef CONFIG_F_SKYDISP_CABC_CTRL
+	&dev_attr_cabc_ctl.attr,
+#endif
+#ifdef CONFIG_PANTECH_LCD_SHARPNESS_CTRL
+	&dev_attr_sharpness_ctl.attr,
+#endif
 	&dev_attr_msm_fb_fps_level.attr,
 	NULL,
 };
@@ -379,6 +542,18 @@ static void msm_fb_remove_sysfs(struct platform_device *pdev)
 	struct msm_fb_data_type *mfd = platform_get_drvdata(pdev);
 	sysfs_remove_group(&mfd->fbi->dev->kobj, &msm_fb_attr_group);
 }
+
+#ifdef  CONFIG_F_SKYDISP_SHUTDOWN_BUGFIX
+static void mdss_fb_shutdown(struct platform_device *pdev)
+{
+    struct msm_fb_data_type *mfd = platform_get_drvdata(pdev);
+
+    mfd->shutdown_pending = true;
+    lock_fb_info(mfd->fbi);
+    mdss_fb_release_all(mfd->fbi, true);
+    unlock_fb_info(mfd->fbi);
+}
+#endif
 
 static void bl_workqueue_handler(struct work_struct *work);
 
@@ -451,7 +626,10 @@ static int msm_fb_probe(struct platform_device *pdev)
 
 	vsync_cntrl.dev = mfd->fbi->dev;
 	mfd->panel_info.frame_count = 0;
-	mfd->bl_level = 0;
+	mfd->bl_level = 10;
+#ifdef CONFIG_F_SKYDISP_SKIP_BLSET_WITH_EFS_ERASE
+	mfd->bl_set_first_skip =1;
+#endif	
 	bl_scale = 1024;
 	bl_min_lvl = 255;
 #ifdef CONFIG_FB_MSM_OVERLAY
@@ -829,7 +1007,11 @@ static struct platform_driver msm_fb_driver = {
 	.suspend = msm_fb_suspend,
 	.resume = msm_fb_resume,
 #endif
+#ifdef  CONFIG_F_SKYDISP_SHUTDOWN_BUGFIX
+    .shutdown = mdss_fb_shutdown,
+#else
 	.shutdown = msm_fb_shutdown,
+#endif
 	.driver = {
 		   /* Driver name must match the device name added in platform.c. */
 		   .name = "msm_fb",
@@ -1019,6 +1201,9 @@ static int msm_fb_blank_sub(int blank_mode, struct fb_info *info,
 		if (mfd->panel_power_on) {
 			int curr_pwr_state;
 
+#ifdef CONFIG_F_SKYDISP_SKIP_BLSET_WITH_EFS_ERASE
+			mfd->bl_set_first_skip =0;
+#endif
 			mfd->op_enable = FALSE;
 			curr_pwr_state = mfd->panel_power_on;
 			down(&mfd->sem);
@@ -1299,8 +1484,19 @@ static int msm_fb_register(struct msm_fb_data_type *mfd)
 	var->grayscale = 0,	/* No graylevels */
 	var->nonstd = 0,	/* standard pixel format */
 	var->activate = FB_ACTIVATE_VBL,	/* activate it at vsync */
+#if defined(CONFIG_MACH_APQ8064_EF48S) ||defined(CONFIG_MACH_APQ8064_EF49K) || defined(CONFIG_MACH_APQ8064_EF50L)
+	var->height = 117,	/* height of picture in mm */
+	var->width = 66,	/* width of picture in mm */	
+#elif defined(CONFIG_MACH_APQ8064_EF51S) || defined(CONFIG_MACH_APQ8064_EF51K) || defined(CONFIG_MACH_APQ8064_EF51L) //p14682 kobj 120829 modify active-area EF51S/K/L(129.6*72.9)
+	var->height = 130,	/* height of picture in mm */
+	var->width = 73,	/* width of picture in mm */	
+#elif  defined(CONFIG_MACH_APQ8064_EF52S) || defined(CONFIG_MACH_APQ8064_EF52K) || defined(CONFIG_MACH_APQ8064_EF52L) //shkwak 20130103, EF52S/K/L(109.824*61.776)
+	var->height = 110,	/* height of picture in mm */
+	var->width = 62,	/* width of picture in mm */	
+#else
 	var->height = -1,	/* height of picture in mm */
 	var->width = -1,	/* width of picture in mm */
+#endif
 	var->accel_flags = 0,	/* acceleration flags */
 	var->sync = 0,	/* see FB_SYNC_* */
 	var->rotate = 0,	/* angle we rotate counter clockwise */
@@ -1799,8 +1995,10 @@ static int msm_fb_open(struct fb_info *info, int user)
 	}
 
 	if (info->node == 0 && !(mfd->cont_splash_done)) {	/* primary */
+#ifdef CONFIG_F_SKYDISP_EF52_KK_TEARING
 			if(!mfd->ref_cnt)
 				mdp_set_dma_pan_info(info, NULL, TRUE);
+#endif		
 			mfd->ref_cnt++;
 			return 0;
 	}
@@ -1841,6 +2039,10 @@ static void msm_fb_free_base_pipe(struct msm_fb_data_type *mfd)
 	return 	mdp4_overlay_free_base_pipe(mfd);
 }
 
+#if defined (BOOT_TOUCH_RESET) && (defined(CONFIG_SKY_EF52S_BOARD)|| defined(CONFIG_SKY_EF52K_BOARD)|| defined(CONFIG_SKY_EF52L_BOARD))
+extern int touch_init;
+#endif
+
 static int msm_fb_release_all(struct fb_info *info, boolean is_all)
 {
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)info->par;
@@ -1876,6 +2078,10 @@ static int msm_fb_release_all(struct fb_info *info, boolean is_all)
 		} else {
 			msm_fb_free_base_pipe(mfd);
 		}
+#if defined (BOOT_TOUCH_RESET) && (defined(CONFIG_SKY_EF52S_BOARD)|| defined(CONFIG_SKY_EF52K_BOARD)|| defined(CONFIG_SKY_EF52L_BOARD))
+		if (info->node == 0)
+			touch_init = false;
+#endif		
 	}
 
 	return ret;
@@ -2044,6 +2250,12 @@ static void bl_workqueue_handler(struct work_struct *work)
 	if ((pdata) && (pdata->set_backlight) && (!bl_updated)
 					&& (mfd->panel_power_on)) {
 		mfd->bl_level = unset_bl_level;
+#ifdef CONFIG_F_SKYDISP_SKIP_BLSET_WITH_EFS_ERASE
+	       if(mfd->bl_set_first_skip && mfd->bl_level ==0){
+			mfd->bl_level = 10;
+			mfd->bl_set_first_skip =0;			
+		}
+#endif			
 		pdata->set_backlight(mfd);
 		bl_level_old = unset_bl_level;
 		bl_updated = 1;
@@ -4207,6 +4419,12 @@ static int msm_fb_ioctl(struct fb_info *info, unsigned int cmd,
 				sizeof(mdp_metadata));
 
 		break;
+		
+#ifdef CONFIG_PANTECH_LCD_GET_LCD_REV
+    case MSMFB_PANTECH_LCD_GET_LCD_REV:
+        ret = mipi_renesas_fhd_manufature_ID_get();
+        break;
+#endif		
 
 	default:
 		MSM_FB_INFO("MDP: unknown ioctl (cmd=%x) received!\n", cmd);

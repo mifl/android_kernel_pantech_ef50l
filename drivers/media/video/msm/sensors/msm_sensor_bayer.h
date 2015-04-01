@@ -35,8 +35,10 @@ struct sensor_driver_t {
 	int32_t (*platform_probe)(struct platform_device *pdev);
 };
 
+#ifndef CONFIG_PANTECH_CAMERA
 int32_t msm_sensor_bayer_config(struct msm_sensor_ctrl_t *s_ctrl,
 			void __user *argp);
+#endif
 int32_t msm_sensor_bayer_power_up(struct msm_sensor_ctrl_t *s_ctrl);
 int32_t msm_sensor_bayer_power_down(struct msm_sensor_ctrl_t *s_ctrl);
 

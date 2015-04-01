@@ -83,7 +83,11 @@ void signal_irsc_completion(void)
 int check_permissions(void)
 {
 	int rc = 0;
+#ifdef FEATURE_LGU_DS_QMI_FUSION
+	if (!current_euid() || in_egroup_p(AID_NET_RAW) || in_egroup_p(AID_INET))
+#else
 	if (!current_euid() || in_egroup_p(AID_NET_RAW))
+#endif//FEATURE_LGU_DS_QMI_FUSION
 		rc = 1;
 	return rc;
 }

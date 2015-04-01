@@ -75,6 +75,15 @@ msm_mipi-objs := mipi_dsi.o mipi_dsi_host.o
 obj-$(CONFIG_FB_MSM_MIPI_DSI) += msm_mipi.o
 
 # MIPI manufacture
+ifeq ($(CONFIG_FB_PANTECH_MIPI_DSI_SONY),y)
+obj-$(CONFIG_FB_PANTECH_MIPI_DSI_SONY) += mipi_sony_incell.o
+else
+ifeq ($(CONFIG_FB_PANTECH_MIPI_DSI_RENESAS),y)
+obj-$(CONFIG_FB_PANTECH_MIPI_DSI_RENESAS) += mipi_renesas_fhd.o
+else
+obj-$(CONFIG_FB_PANTECH_MIPI_DSI_ROHM) += mipi_rohm.o
+endif
+endif 
 obj-$(CONFIG_FB_MSM_MIPI_DSI_TOSHIBA) += mipi_toshiba.o
 obj-$(CONFIG_FB_MSM_MIPI_DSI_NOVATEK) += mipi_novatek.o
 obj-$(CONFIG_FB_MSM_MIPI_DSI_ORISE) += mipi_orise.o
@@ -131,6 +140,18 @@ obj-y += mipi_chimei_wxga_pt.o
 obj-y += mipi_chimei_wuxga.o
 obj-y += mipi_truly_video_wvga_pt.o
 else
+ifeq ($(CONFIG_FB_PANTECH_MIPI_SONY_CMD_HD_PANEL),y)
+obj-$(CONFIG_FB_PANTECH_MIPI_SONY_CMD_HD_PANEL) +=mipi_sony_incell_cmd_hd.o
+endif
+ifeq ($(CONFIG_FB_PANTECH_MIPI_SONY_VIDEO_HD_PANEL),y)
+obj-$(CONFIG_FB_PANTECH_MIPI_SONY_VIDEO_HD_PANEL) +=mipi_sony_incell_video_hd.o
+endif
+ifeq ($(CONFIG_FB_PANTECH_MIPI_RENESAS_VIDEO_FHD),y)
+obj-$(CONFIG_FB_PANTECH_MIPI_RENESAS_VIDEO_FHD) += mipi_renesas_video_fhd.o
+endif
+ifeq ($(CONFIG_FB_PANTECH_MIPI_ROHM_VIDEO_HD),y)
+obj-$(CONFIG_FB_PANTECH_MIPI_ROHM_VIDEO_HD) += mipi_rohm_video_hd.o
+endif
 obj-$(CONFIG_FB_MSM_MIPI_TOSHIBA_VIDEO_WVGA_PT) += mipi_toshiba_video_wvga_pt.o
 obj-$(CONFIG_FB_MSM_MIPI_TOSHIBA_VIDEO_WSVGA_PT) += mipi_toshiba_video_wsvga_pt.o
 obj-$(CONFIG_FB_MSM_MIPI_TOSHIBA_VIDEO_WUXGA) += mipi_toshiba_video_wuxga.o

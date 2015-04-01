@@ -21,7 +21,15 @@
 #define VOC_REC_UPLINK		0x00
 #define VOC_REC_DOWNLINK	0x01
 #define VOC_REC_BOTH		0x02
-
+#if defined(CONFIG_PANTECH_SND_QSOUND)
+#if defined(CONFIG_SKY_EF52S_BOARD) || defined(CONFIG_SKY_EF52K_BOARD) || defined(CONFIG_SKY_EF52L_BOARD) || defined(CONFIG_SKY_EF51S_BOARD) || defined(CONFIG_SKY_EF51K_BOARD) || defined(CONFIG_SKY_EF51L_BOARD) 
+#define QVOICE 1
+#else
+#define QVOICE 0
+#endif
+#else
+#define QVOICE 0
+#endif
 /* Needed for VOIP & VOLTE support */
 /* Due to Q6 memory map issue */
 enum {
@@ -664,7 +672,6 @@ struct cvs_start_record_cmd {
 #define VSS_IVOCPROC_TOPOLOGY_ID_NONE			0x00010F70
 #define VSS_IVOCPROC_TOPOLOGY_ID_TX_SM_ECNS		0x00010F71
 #define VSS_IVOCPROC_TOPOLOGY_ID_TX_DM_FLUENCE		0x00010F72
-
 #define VSS_IVOCPROC_TOPOLOGY_ID_RX_DEFAULT		0x00010F77
 
 /* Newtwork IDs */
@@ -976,6 +983,18 @@ struct cal_data {
 #define MAX_VOC_SESSIONS 4
 #define SESSION_ID_BASE 0xFFF0
 
+#if QVOICE
+void voc_set_phone_mode(int phone_mode);
+int voc_get_phone_mode(void);
+
+struct qvoice {
+	int phone_mode;
+	void* file_alloc;
+	__kernel_time_t file_mtime;
+	struct chunk_t* chunk_p;
+};
+#endif
+
 struct common_data {
 	/* these default values are for all devices */
 	uint32_t default_mute_val;
@@ -1000,6 +1019,10 @@ struct common_data {
 	struct mvs_driver_info mvs_info;
 
 	struct voice_data voice[MAX_VOC_SESSIONS];
+
+#if QVOICE
+	struct qvoice qvoice;
+#endif
 };
 
 void voc_register_mvs_cb(ul_cb_fn ul_cb,
@@ -1043,7 +1066,9 @@ int voc_disable_cvp(uint16_t session_id);
 int voc_enable_cvp(uint16_t session_id);
 int voc_set_route_flag(uint16_t session_id, uint8_t path_dir, uint8_t set);
 uint8_t voc_get_route_flag(uint16_t session_id, uint8_t path_dir);
-
+#if 1 // SR 1340074 Subject: [PATCH] ASoC: msm: Unmap ACDB memory with Q6 on ACDB close
+int voice_unmap_cal_blocks(void);
+#endif
 #define VOICE_SESSION_NAME "Voice session"
 #define VOIP_SESSION_NAME "VoIP session"
 #define VOLTE_SESSION_NAME "VoLTE session"

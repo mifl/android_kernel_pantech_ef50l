@@ -26,6 +26,10 @@
 #include <mach/cpufreq.h>
 
 static int enabled;
+#ifdef CONFIG_PANTECH_APQ8064_KK_ECOMODE
+//2014.04.26 APQ8064_KK ecomode, 3C8 - p14978
+static int ecocpu;
+#endif
 static struct msm_thermal_data msm_thermal_info;
 static uint32_t limited_max_freq = MSM_CPUFREQ_NO_LIMIT;
 static struct delayed_work check_temp_work;
@@ -275,6 +279,23 @@ static struct kernel_param_ops module_ops = {
 module_param_cb(enabled, &module_ops, &enabled, 0644);
 MODULE_PARM_DESC(enabled, "enforce thermal limit on cpu");
 
+#ifdef CONFIG_PANTECH_APQ8064_KK_ECOMODE
+//2014.04.26 APQ8064_KK ecomode, 3C8 - p14978
+static int ecocpu;
+static int set_ecocpu(const char *val, const struct kernel_param *kp)
+{
+	int ret = 0;
+	ret = param_set_bool(val, kp);
+	pr_info("msm_thermal: ecocpu = %d\n", ecocpu);
+	return ret;
+}
+static struct kernel_param_ops module_ops_ecocpu = {
+	.set = set_ecocpu,
+	.get = param_get_bool,
+};
+module_param_cb(ecocpu, &module_ops_ecocpu, &ecocpu, 0644);
+MODULE_PARM_DESC(ecocpu, "ecocpu on");
+#endif
 
 /* Call with core_control_mutex locked */
 static int __cpuinit update_offline_cores(int val)
@@ -431,6 +452,10 @@ int __devinit msm_thermal_init(struct msm_thermal_data *pdata)
 	memcpy(&msm_thermal_info, pdata, sizeof(struct msm_thermal_data));
 
 	enabled = 1;
+#ifdef CONFIG_PANTECH_APQ8064_KK_ECOMODE
+//2014.04.26 APQ8064_KK ecomode, 3C8 - p14978
+	ecocpu=0;
+#endif
 	core_control_enabled = 1;
 	INIT_DELAYED_WORK(&check_temp_work, check_temp);
 	schedule_delayed_work(&check_temp_work, 0);

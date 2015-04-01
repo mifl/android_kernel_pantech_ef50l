@@ -58,6 +58,7 @@ int32_t msm_sensor_bayer_get_csi_params(struct msm_sensor_ctrl_t *s_ctrl,
 	return 0;
 }
 
+#ifndef CONFIG_PANTECH_CAMERA
 int32_t msm_sensor_bayer_config(struct msm_sensor_ctrl_t *s_ctrl,
 	void __user *argp)
 {
@@ -349,6 +350,7 @@ int32_t msm_sensor_bayer_config(struct msm_sensor_ctrl_t *s_ctrl,
 
 	return rc;
 }
+#endif
 
 static struct msm_cam_clk_info cam_clk_info[] = {
 	{"cam_clk", MSM_SENSOR_MCLK_24HZ},

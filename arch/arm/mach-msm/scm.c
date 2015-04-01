@@ -22,6 +22,12 @@
 
 #include <mach/scm.h>
 
+#if defined(CONFIG_PANTECH_DEBUG)
+#ifdef CONFIG_PANTECH_DEBUG_SCHED_LOG  //p14291_pantech_dbg
+#include <mach/pantech_debug.h>
+#endif
+#endif
+
 #define SCM_ENOMEM		-5
 #define SCM_EOPNOTSUPP		-4
 #define SCM_EINVAL_ADDR		-3

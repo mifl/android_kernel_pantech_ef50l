@@ -1024,23 +1024,110 @@ struct msm_snapshot_pp_status {
 #define CFG_SET_VISION_AE             56
 #define CFG_HDR_UPDATE                57
 #define CFG_ACTUAOTOR_REG_INIT        58
+//patch1031 44 45 46 add
+#ifdef CONFIG_PANTECH_CAMERA
+#define CFG_AUTO_FOCUS 59//55
+#define CFG_SET_SCENE_MODE 60//56
+#define CFG_SET_FOCUS_STEP 61//57
+#define CFG_SET_SZOOM 62//58
+#define CFG_SET_ANTISHAKE 63//59
+#define CFG_SET_FOCUS_RECT              64//60
+#if 1 //def F_PANTECH_CAMERA_FIX_CFG_LED_MODE
+#define CFG_SET_LED_MODE 65//61
+#endif
+#if 1 //def F_PANTECH_CAMERA_ADD_CFG_DIMENSION
+#define CFG_SET_DIMENSION 66//62
+#endif
+#ifdef CONFIG_PANTECH_CAMERA_TUNER
+#define CFG_SET_TUNER                   67//63
+#endif
+#define CFG_SET_REFLECT 68//64
+#define CFG_SET_PREVIEW_FPS 69//65
+#define CFG_SET_CONTINUOUS_AF 70//66
+#define CFG_UPDATE_ISP                  71//67
+#define CFG_GET_FRAME_INFO 72//68
+#define CFG_GET_REG 73//69
+#define CFG_SET_WDR 74//70
+#define CFG_STOP_CAPTURE        75//71
+#define CFG_SET_AF_CHECK        76//72
+#if 1 //def F_PANTECH_CAMERA_CFG_HDR
+#define CFG_SET_HDR 77//73
+#endif
+#if 1 //def F_PANTECH_CAMERA_FIX_CFG_METERING_AREA
+#define CFG_SET_METERING_AREA 78//74
+#endif
+#if 1 //def F_PANTECH_CAMERA_ADD_CFG_OJT
+#define CFG_SET_OJT 79//75
+#endif
+#if 1 //def F_PANTECH_CAMERA_FIX_CFG_AE_AWB_LOCK
+#define CFG_SET_AEC_LOCK 80//76
+#define CFG_SET_AWB_LOCK 81//77
+#endif
+#if 1 //def F_PANTECH_CAMERA_FIX_CFG_FOCUS_MODE
+#define CFG_FOCUS_MODE 82//78
+#endif
+#if	1//def F_PANTECH_CAMERA_DEADBEEF_ERROR_FIX
+#define CFG_ESD_RESET		   83//79
+#define CFG_MAX                         84//80
+#else
+#define CFG_MAX                         83//79
+#endif
+#else
 #define CFG_MAX                       59
+#endif
 
 
 #define MOVE_NEAR	0
 #define MOVE_FAR	1
 
+#ifdef CONFIG_PANTECH_CAMERA
+#define SENSOR_SNAPSHOT_MODE		0
+#define SENSOR_RAW_SNAPSHOT_MODE	1
+#define SENSOR_PREVIEW_MODE		2
+#define SENSOR_VIDEO_MODE		3
+#define SENSOR_HFR_60FPS_MODE 4
+#define SENSOR_HFR_90FPS_MODE 5
+#define SENSOR_HFR_120FPS_MODE 6
+#else
 #define SENSOR_PREVIEW_MODE		0
 #define SENSOR_SNAPSHOT_MODE		1
 #define SENSOR_RAW_SNAPSHOT_MODE	2
 #define SENSOR_HFR_60FPS_MODE 3
 #define SENSOR_HFR_90FPS_MODE 4
 #define SENSOR_HFR_120FPS_MODE 5
+#endif
 
 #define SENSOR_QTR_SIZE			0
 #define SENSOR_FULL_SIZE		1
 #define SENSOR_QVGA_SIZE		2
 #define SENSOR_INVALID_SIZE		3
+
+#ifdef CONFIG_PANTECH_CAMERA//need_to_check//wsyang_debug
+#define CAMERA_EFFECT_OFF		0
+#define CAMERA_EFFECT_MONO		1
+#define CAMERA_EFFECT_NEGATIVE		2
+#define CAMERA_EFFECT_SOLARIZE		3
+#define CAMERA_EFFECT_SEPIA		4
+#define CAMERA_EFFECT_POSTERIZE         5
+#define CAMERA_EFFECT_WHITEBOARD	6
+#define CAMERA_EFFECT_BLACKBOARD	7
+#define CAMERA_EFFECT_AQUA		8
+#define CAMERA_EFFECT_EMBOSS		9
+#define CAMERA_EFFECT_SKETCH		10
+#define CAMERA_EFFECT_NEON		11
+#if 1//need_to_check//wsyang_debug //def CONFIG_PANTECH_CAMERA
+#define CAMERA_EFFECT_WHITEBOARD_C 12
+#define CAMERA_EFFECT_BLACKBOARD_C 13
+#else
+#define CAMERA_EFFECT_USER_DEFINED1     12
+#define CAMERA_EFFECT_USER_DEFINED2     13
+#endif
+#define CAMERA_EFFECT_USER_DEFINED3     14
+#define CAMERA_EFFECT_USER_DEFINED4     15
+#define CAMERA_EFFECT_USER_DEFINED5     16
+#define CAMERA_EFFECT_USER_DEFINED6     17
+#define CAMERA_EFFECT_MAX               18
+#endif
 
 /* QRD */
 #define CAMERA_EFFECT_BW		10
@@ -1235,6 +1322,9 @@ struct exp_gain_cfg {
 struct focus_cfg {
 	int32_t steps;
 	int dir;
+#ifdef CONFIG_PANTECH_CAMERA//def F_PANTECH_CAMERA_FIX_CFG_AF_RESURT
+	int8_t *af_result;
+#endif
 };
 
 struct fps_cfg {
@@ -1286,8 +1376,30 @@ struct sensor_init_cfg {
 	uint8_t pict_res;
 };
 
+#ifdef CONFIG_PANTECH_CAMERA
+//Start ## QCTK ##
+#define ROLLOFF_CALDATA_SIZE    (17 * 13)
+typedef struct
+{
+	unsigned short           mesh_rolloff_table_size;     // TableSize
+	uint8_t                  r_gain[ROLLOFF_CALDATA_SIZE];   // RGain
+	uint8_t                  gr_gain[ROLLOFF_CALDATA_SIZE];  // GRGain
+	uint8_t                  gb_gain[ROLLOFF_CALDATA_SIZE];  // GBGain
+	uint8_t                  b_gain[ROLLOFF_CALDATA_SIZE];   // BGain
+} rolloff_caldata_array_type;
+//End ## QCTK ##
+#endif
 struct sensor_calib_data {
 	/* Color Related Measurements */
+#ifdef CONFIG_PANTECH_CAMERA//F_PANTECH_CAMERA_HWP //03_26_bsy
+	uint16_t r_over_g_5100K; //03_19_bsy 4100 cal add
+	uint16_t b_over_g_5100K; //03_19_bsy 4100 cal add
+	uint16_t gr_over_gb_5100K; //03_19_bsy 4100 cal add
+
+	uint16_t r_over_g_4100K; //03_19_bsy 4100 cal add
+	uint16_t b_over_g_4100K; //03_19_bsy 4100 cal add
+	uint16_t gr_over_gb_4100K; //03_19_bsy 4100 cal add
+#endif
 	uint16_t r_over_g;
 	uint16_t b_over_g;
 	uint16_t gr_over_gb;
@@ -1298,6 +1410,14 @@ struct sensor_calib_data {
 	uint16_t stroke_amt;
 	uint16_t af_pos_1m;
 	uint16_t af_pos_inf;
+
+#ifdef CONFIG_PANTECH_CAMERA
+	//Start ## QCTK ##
+	/* Lens Shading Calibration Data */
+	rolloff_caldata_array_type rolloff_D50;
+	rolloff_caldata_array_type rolloff_TL84;
+	//End ## QCTK ##
+#endif
 };
 
 enum msm_sensor_resolution_t {
@@ -1374,6 +1494,24 @@ struct cord {
 	uint32_t x;
 	uint32_t y;
 };
+
+#ifdef CONFIG_PANTECH_CAMERA//def F_PANTECH_CAMERA_1080P_PREVIEW
+struct dimension_cfg {
+	uint16_t prev_dx;
+	uint16_t prev_dy;
+	uint16_t pict_dx;
+	uint16_t pict_dy;
+	uint16_t video_dx;
+	uint16_t video_dy;
+};
+#endif
+
+#ifdef CONFIG_PANTECH_CAMERA_TUNER
+struct tuner_cfg {
+	uint8_t *fbuf;
+	uint32_t fsize;
+};
+#endif
 
 struct msm_eeprom_data_t {
 	void *eeprom_data;
@@ -1471,9 +1609,13 @@ struct csiphy_cfg_data {
 #define CSI_RAW8    0x2A
 #define CSI_RAW10   0x2B
 #define CSI_RAW12   0x2C
-#define CSI_YUV420_Y_8 0x30
+#ifdef CONFIG_PANTECH_CAMERA//#ifdef F_PANTECH_CAMERA_QPATCH_JPEG_ZSL
+#define CSI_JPEG 0x30//need_to_check
+#else
+#define CSI_YUV420_Y_8 0x30//need_to_check//wsyang_debug
 #define CSI_YUV420_UV_8 0x31
 #define CSI_YUV420_JM_8 0x32
+#endif
 
 #define CSI_DECODE_6BIT 0
 #define CSI_DECODE_8BIT 1
@@ -1644,6 +1786,13 @@ struct sensor_cfg_data {
 	int cfgtype;
 	int mode;
 	int rs;
+#ifdef CONFIG_PANTECH_CAMERA
+#if 1//def F_PANTECH_CAMERA_ADD_CFG_ASD
+	int8_t frame_info[13];
+#else
+	int8_t frame_info[10];
+#endif
+#endif
 	uint8_t max_steps;
 
 	union {
@@ -1684,6 +1833,33 @@ struct sensor_cfg_data {
 		void *setting;
 		int32_t vision_mode_enable;
 		int32_t vision_ae;
+#ifdef CONFIG_PANTECH_CAMERA
+		int8_t whitebalance;
+		int8_t led_mode;
+		int8_t iso;
+		int32_t scene_mode;
+		int32_t focus_step;
+		int32_t szoom;
+		int8_t antishake;
+		int32_t exposure;
+		uint32_t focus_rect; /* x_c, y_c */
+#if 1 //def F_PANTECH_CAMERA_ADD_CFG_DIMENSION
+		struct dimension_cfg dimension;
+#endif
+		int32_t preview_fps;
+		int8_t continuous_af;
+#ifdef CONFIG_PANTECH_CAMERA_TUNER
+		struct tuner_cfg tuner;
+#endif
+		int32_t reflect;
+		int32_t isp_bin_vaddr;
+		int32_t reg;
+		int32_t wdr;
+		int8_t ojt;
+#if 1 //def F_PANTECH_CAMERA_FIX_CFG_AE_AWB_LOCK
+		int8_t is_lock;
+#endif
+#endif	// CONFIG_PANTECH_CAMERA
 	} cfg;
 };
 

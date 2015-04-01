@@ -72,7 +72,11 @@ enum wled_ovp_threshold {
 	WLED_OVP_35V,
 	WLED_OVP_32V,
 	WLED_OVP_29V,
+#ifdef CONFIG_PANTECH_LED_BLINK_CONTROL
+	WLED_OVP_37V,
+#else
 	WLED_OVP_27V,
+#endif /* CONFIG_PANTECH_LED_BLINK_CONTROL */
 };
 
 /**
@@ -93,7 +97,9 @@ struct wled_config_data {
 	u8	boost_curr_lim;
 	u8	cp_select;
 	u8	ctrl_delay_us;
+#ifndef CONFIG_PANTECH_LED_BLINK_CONTROL
 	u16	comp_res_val;
+#endif
 	bool	dig_mod_gen_en;
 	bool	cs_out_en;
 	bool	op_fdbck;
@@ -114,7 +120,9 @@ struct pm8xxx_led_config {
 	u8	id;
 	u8	mode;
 	u16	max_current;
+#ifndef CONFIG_PANTECH_LED_BLINK_CONTROL
 	u16	pwm_adjust_brightness;
+#endif
 	int	pwm_channel;
 	u32	pwm_period_us;
 	bool	default_state;
@@ -130,12 +138,16 @@ struct pm8xxx_led_config {
  *	for each LED. It maps one-to-one with
  *	array of LEDs
  * @num_configs - count of members of configs array
+#ifndef CONFIG_PANTECH_LED_BLINK_CONTROL
  * @use_pwm - controlled by userspace
+#endif
  */
 struct pm8xxx_led_platform_data {
 	struct	led_platform_data	*led_core;
 	struct	pm8xxx_led_config	*configs;
 	u32				num_configs;
+#ifndef CONFIG_PANTECH_LED_BLINK_CONTROL
 	int				use_pwm;
+#endif
 };
 #endif /* __LEDS_PM8XXX_H__ */

@@ -30,6 +30,10 @@
 #include <linux/of_gpio.h>
 #include <linux/spinlock.h>
 
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING
+#include <mach/pantech_sys.h>
+#endif
+
 struct gpio_button_data {
 	const struct gpio_keys_button *button;
 	struct input_dev *input;
@@ -336,6 +340,9 @@ static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata)
 			input_event(input, type, button->code, button->value);
 	} else {
 		input_event(input, type, button->code, !!state);
+#ifdef CONFIG_PANTECH_ERR_CRASH_LOGGING
+		pantech_force_dump_key(button->code,state);
+#endif
 	}
 	input_sync(input);
 }
